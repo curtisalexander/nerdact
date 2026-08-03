@@ -93,6 +93,24 @@ def test_comparison_supports_multiple_linked_model_profiles(tmp_path):
             "report": "small.html",
             "domain": result,
             "benchmark": result,
+            "performance": {
+                "warm_latency_median_ms": 12.3,
+                "examples_per_second": 80.0,
+                "cached_snapshot_bytes": 1024**2,
+                "peak_memory_bytes": 2 * 1024**2,
+                "peak_memory_kind": "process RSS",
+                "peak_rss_bytes": 2 * 1024**2,
+                "timed_repeats": 3,
+            },
+            "environment": {
+                "processor": "Test CPU",
+                "machine": "test64",
+                "os": "Test OS",
+                "device": "cpu",
+                "python": "3.11",
+                "torch": "2.0",
+                "transformers": "4.0",
+            },
         },
         {
             "name": "Large model",
@@ -103,6 +121,24 @@ def test_comparison_supports_multiple_linked_model_profiles(tmp_path):
             "report": "large.html",
             "domain": result,
             "benchmark": result,
+            "performance": {
+                "warm_latency_median_ms": 45.6,
+                "examples_per_second": 20.0,
+                "cached_snapshot_bytes": 3 * 1024**2,
+                "peak_memory_bytes": 4 * 1024**2,
+                "peak_memory_kind": "process RSS",
+                "peak_rss_bytes": 4 * 1024**2,
+                "timed_repeats": 3,
+            },
+            "environment": {
+                "processor": "Test CPU",
+                "machine": "test64",
+                "os": "Test OS",
+                "device": "cpu",
+                "python": "3.11",
+                "torch": "2.0",
+                "transformers": "4.0",
+            },
         },
     ]
     output = tmp_path / "comparison.html"
@@ -110,9 +146,16 @@ def test_comparison_supports_multiple_linked_model_profiles(tmp_path):
     page = output.read_text()
     assert 'href="small.html"' in page and 'href="large.html"' in page
     assert "Small &lt;model&gt;" in page and "66M" in page
+    assert "12.3 ms" in page and "1 MiB" in page and "Test CPU" in page
+    assert "same 1 fictional call transcript" in page
+    assert "Quality versus cost conclusion" in page
 
 
 def test_checked_in_data_is_valid():
     examples = load_jsonl("data/transcripts.jsonl")
-    assert len(examples) == 10
+    assert len(examples) == 20
     assert any(not example.entities for example in examples)
+    assert any(entity.start == 0 for example in examples for entity in example.entities)
+    assert any(
+        entity.end == len(example.text) for example in examples for entity in example.entities
+    )

@@ -17,6 +17,10 @@ def _pct(value: float) -> str:
     return f"{value:.1%}"
 
 
+def _size(value: int) -> str:
+    return f"{value / 1024**2:.0f} MiB"
+
+
 def _marked(text: str, entities: list[Entity] | tuple[Entity, ...]) -> str:
     output, cursor = [], 0
     for entity in sorted(entities):
@@ -93,6 +97,7 @@ def write_comparison(rows: list[dict[str, Any]], html_path: Path, split: str, li
     for row in rows:
         domain = row["domain"]["metrics"]
         benchmark = row["benchmark"]["metrics"]
+        performance = row["performance"]
         report_links.append(
             f'<a href="{html.escape(row["report"])}">{html.escape(row["name"])} report</a>'
         )
@@ -101,14 +106,21 @@ def write_comparison(rows: list[dict[str, Any]], html_path: Path, split: str, li
             f"<td>{html.escape(row['introduced'])}</td><td>{html.escape(row['parameters'])}</td>"
             f"<td>{_pct(domain['micro']['precision'])}</td><td>{_pct(domain['micro']['recall'])}</td><td>{_pct(domain['micro']['f1'])}</td>"
             f"<td>{_pct(domain['characters']['leakage_rate'])}</td><td>{_pct(domain['characters']['over_redaction_rate'])}</td>"
-            f"<td>{_pct(benchmark['micro']['precision'])}</td><td>{_pct(benchmark['micro']['recall'])}</td><td>{_pct(benchmark['micro']['f1'])}</td></tr>"
+            f"<td>{_pct(benchmark['micro']['precision'])}</td><td>{_pct(benchmark['micro']['recall'])}</td><td>{_pct(benchmark['micro']['f1'])}</td>"
+            f"<td>{performance['warm_latency_median_ms']:.1f} ms</td><td>{performance['examples_per_second']:.1f}/s</td>"
+            f"<td>{_size(performance['cached_snapshot_bytes'])}</td><td>{_size(performance['peak_memory_bytes'])}<small>{html.escape(performance['peak_memory_kind'])}</small></td></tr>"
         )
+    environment = rows[0]["environment"]
+    domain_count = len(rows[0]["domain"]["examples"])
+    transcript_label = "transcript" if domain_count == 1 else "transcripts"
     page = f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NERdact model benchmark</title><style>
 :root{{--ink:#172033;--muted:#637083;--paper:#f5f7fb;--card:#fff;--accent:#5b4bdb;--line:#dfe4ee}}*{{box-sizing:border-box}}body{{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 system-ui,sans-serif}}main{{max-width:1100px;margin:auto;padding:3rem 2rem}}h1{{font-size:2.7rem;margin:.2rem 0}}.eyebrow,a{{color:var(--accent)}}.eyebrow{{font-weight:750;letter-spacing:.12em}}.card{{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.3rem;margin:1.5rem 0}}table{{width:100%;border-collapse:collapse;background:white;font-size:.9rem}}th,td{{padding:.8rem;border-bottom:1px solid var(--line);text-align:right}}th:first-child{{text-align:left}}th small{{display:block;color:var(--muted);font-weight:400}}code{{background:#eceefa;padding:.1rem .35rem;border-radius:4px}}.warning{{border-left:5px solid #e6a700}}@media(max-width:760px){{main{{padding:1.5rem 1rem}}table{{display:block;overflow-x:auto}}}}
 </style></head><body><main><div class="eyebrow">NERDACT · MODEL COMPARISON</div><h1>Size, architecture, and fine-tuning all matter</h1><p>{" · ".join(report_links)}</p>
-<div class="card"><p>Every checkpoint saw the same 10 fictional call transcripts and the same first {limit} examples from the CoNLL-2003 <strong>{html.escape(split)}</strong> split. Domain metrics require exact character boundaries and labels. Leakage and over-redaction measure character coverage.</p></div>
-<table><thead><tr><th rowspan="2">Checkpoint</th><th rowspan="2">Architecture year</th><th rowspan="2">Approx. parameters</th><th colspan="5">Synthetic call transcripts</th><th colspan="3">CoNLL {html.escape(split)} ({limit})</th></tr><tr><th>Precision</th><th>Recall</th><th>F1</th><th>Leakage</th><th>Over-redaction</th><th>Precision</th><th>Recall</th><th>F1</th></tr></thead><tbody>{"".join(table_rows)}</tbody></table>
-<div class="card"><h2>Two comparisons, different conclusions</h2><p>The three <code>dslim</code> checkpoints form the cleaner size experiment: one publisher, one four-label CoNLL task, and DistilBERT/BERT encoders at roughly 66M, 110M, and 340M parameters. Even this does not prove that scale alone caused every difference because each checkpoint is a separately fine-tuned artifact.</p><p>RoBERTa-large is a practical checkpoint comparison, not a controlled architecture experiment. It changes model family, tokenizer, scale, and fine-tuning procedure at once. A perfect score on ten designed examples is encouraging, not proof of safety; a larger, independently labeled transcript set remains necessary.</p></div>
+<div class="card"><p>Every checkpoint saw the same {domain_count} fictional call {transcript_label} and the same first {limit} examples from the CoNLL-2003 <strong>{html.escape(split)}</strong> split. Domain metrics require exact character boundaries and labels. Leakage and over-redaction measure character coverage.</p></div>
+<table><thead><tr><th rowspan="2">Checkpoint</th><th rowspan="2">Architecture year</th><th rowspan="2">Approx. parameters</th><th colspan="5">Synthetic call transcripts</th><th colspan="3">CoNLL {html.escape(split)} ({limit})</th><th colspan="4">Warm inference cost</th></tr><tr><th>Precision</th><th>Recall</th><th>F1</th><th>Leakage</th><th>Over-redaction</th><th>Precision</th><th>Recall</th><th>F1</th><th>Median latency</th><th>Throughput</th><th>Cache snapshot</th><th>Peak memory</th></tr></thead><tbody>{"".join(table_rows)}</tbody></table>
+<div class="card"><h2>Timing method and test machine</h2><p>Each checkpoint ran in a fresh process. After one untimed warm-up example, NERdact timed sequential, single-example inference over the {domain_count} checked-in {transcript_label} for {rows[0]["performance"]["timed_repeats"]} repeats using a monotonic clock and device synchronization. Throughput is examples per second. Peak memory is accelerator memory when inference uses CUDA or MPS and complete-process peak RSS on CPU; the JSON artifact also retains peak RSS. Cache snapshot size sums the unique files actually present in the pinned model snapshot, so it describes this run's downloaded files rather than every alternate format hosted in the repository.</p><p><strong>{html.escape(environment["processor"])}</strong> ({html.escape(environment["machine"])}) · {html.escape(environment["os"])} · device <code>{html.escape(environment["device"])}</code> · Python {html.escape(environment["python"])} · PyTorch {html.escape(environment["torch"])} · Transformers {html.escape(environment["transformers"])}</p></div>
+<div class="card"><h2>Two comparisons, different conclusions</h2><p>The three <code>dslim</code> checkpoints form the cleaner size experiment: one publisher, one four-label CoNLL task, and DistilBERT/BERT encoders at roughly 66M, 110M, and 340M parameters. Even this does not prove that scale alone caused every difference because each checkpoint is a separately fine-tuned artifact.</p><p>RoBERTa-large is a practical checkpoint comparison, not a controlled architecture experiment. It changes model family, tokenizer, scale, and fine-tuning procedure at once. A strong score on {domain_count} designed examples is encouraging, not proof of safety; a larger, independently labeled transcript set remains necessary.</p></div>
+<div class="card"><h2>Quality versus cost conclusion</h2><p>DistilBERT is the clear download-size, latency, and throughput choice here, but it also has the weakest exact-span quality and substantial leakage. BERT base is the middle-cost compromise. Moving to BERT large improves quality substantially at roughly three times BERT base's cached size and materially lower throughput. At the large-model cost tier, this RoBERTa checkpoint provides the strongest practical quality result and much lower transcript leakage at similar latency and memory to BERT large. None is suitable as a general PII redactor.</p></div>
 <div class="card warning"><h2>Data leakage avoided</h2><p>The RoBERTa model card says its author included the original CoNLL <strong>test</strong> split in training. Reporting that split would produce a contaminated comparison, so this run uses the held-out <strong>{html.escape(split)}</strong> split instead. Dataset access remains subject to the Reuters terms described in the project README.</p></div>
 <h2>Reproduce</h2><pre><code>uv run --extra benchmark nerdact compare --limit {limit}</code></pre><p><small>Models are revision-pinned. Generated reports contain the original input text and must be protected when using non-synthetic data.</small></p></main></body></html>"""
     html_path.parent.mkdir(parents=True, exist_ok=True)

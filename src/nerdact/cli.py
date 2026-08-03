@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .model import DEFAULT_MODEL, DEFAULT_REVISION, HuggingFaceNER
+from .performance import measure_warm_inference
 from .redact import redact
 from .report import build_results, write_comparison, write_results
 from .schema import Entity, Example, load_jsonl
@@ -32,6 +35,43 @@ class ModelProfile:
     parameters: str
     introduced: str
     report: str
+
+
+def _compare_model(
+    profile: ModelProfile,
+    domain_examples: list[Example],
+    benchmark_examples: list[Example],
+    threshold: float,
+    repeats: int,
+) -> dict[str, Any]:
+    """Evaluate one model in an isolated process so its peak RSS is meaningful."""
+    adapter = HuggingFaceNER(profile.model, profile.revision, threshold)
+    measured = measure_warm_inference(
+        adapter, [example.text for example in domain_examples], repeats
+    )
+    domain = build_results(
+        domain_examples,
+        measured.pop("predictions"),
+        profile.model,
+        profile.revision,
+    )
+    benchmark = build_results(
+        benchmark_examples,
+        [adapter.predict(example.text) for example in benchmark_examples],
+        profile.model,
+        profile.revision,
+    )
+    return {
+        "name": profile.name,
+        "model": profile.model,
+        "revision": profile.revision,
+        "parameters": profile.parameters,
+        "introduced": profile.introduced,
+        "report": profile.report,
+        "domain": domain,
+        "benchmark": benchmark,
+        **measured,
+    }
 
 
 def _model_args(parser: argparse.ArgumentParser) -> None:
@@ -131,6 +171,8 @@ def main() -> None:
     compare.add_argument("--limit", type=int, default=200)
     compare.add_argument("--split", choices=("validation",), default="validation")
     compare.add_argument("--threshold", type=float, default=0.5)
+    compare.add_argument("--timing-repeats", type=int, default=3)
+    compare.add_argument("--output", type=Path, default=Path("artifacts/benchmark.json"))
     compare.add_argument("--html", type=Path, default=Path("docs/benchmark.html"))
     args = parser.parse_args()
     if args.command in ("demo", "report"):
@@ -154,6 +196,8 @@ def main() -> None:
     else:
         if not 1 <= args.limit <= 5000:
             parser.error("--limit must be between 1 and 5000")
+        if not 1 <= args.timing_repeats <= 100:
+            parser.error("--timing-repeats must be between 1 and 100")
         domain_examples = load_jsonl(args.data)
         benchmark_examples = _conll_examples(args.limit, args.split)
         rows = []
@@ -191,41 +235,48 @@ def main() -> None:
                 "roberta-large.html",
             ),
         )
+        context = multiprocessing.get_context("spawn")
         for profile in profiles:
-            adapter = HuggingFaceNER(profile.model, profile.revision, args.threshold)
-            domain = build_results(
-                domain_examples,
-                [adapter.predict(x.text) for x in domain_examples],
-                profile.model,
-                profile.revision,
-            )
-            benchmark_results = build_results(
-                benchmark_examples,
-                [adapter.predict(x.text) for x in benchmark_examples],
-                profile.model,
-                profile.revision,
-            )
-            rows.append(
-                {
-                    "name": profile.name,
-                    "model": profile.model,
-                    "revision": profile.revision,
-                    "parameters": profile.parameters,
-                    "introduced": profile.introduced,
-                    "report": profile.report,
-                    "domain": domain,
-                    "benchmark": benchmark_results,
-                }
-            )
+            with context.Pool(1) as pool:
+                row = pool.apply(
+                    _compare_model,
+                    (
+                        profile,
+                        domain_examples,
+                        benchmark_examples,
+                        args.threshold,
+                        args.timing_repeats,
+                    ),
+                )
+            rows.append(row)
             artifact_name = (
                 "results.json"
                 if profile.model == DEFAULT_MODEL
                 else f"{Path(profile.report).stem}-results.json"
             )
             write_results(
-                domain,
+                row["domain"],
                 Path("artifacts") / artifact_name,
                 Path("docs") / profile.report,
             )
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(
+            json.dumps(
+                {
+                    "dataset": DATASET,
+                    "dataset_revision": DATASET_REVISION,
+                    "split": args.split,
+                    "limit": args.limit,
+                    "threshold": args.threshold,
+                    "timing_corpus": str(args.data),
+                    "timing_repeats": args.timing_repeats,
+                    "models": rows,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         write_comparison(rows, args.html, args.split, args.limit)
-        print(f"Wrote {args.html} and {len(rows)} transcript reports")
+        print(f"Wrote {args.output}, {args.html}, and {len(rows)} transcript reports")

@@ -25,7 +25,10 @@ uv run pytest
 ```
 
 The first inference command downloads model weights into Hugging Face's cache; model
-files are not committed. `just setup`, `just demo`, `just report`, and `just check` are
+files are not committed. `compare` also writes machine-readable results, including
+warm latency, throughput, cached snapshot size, peak inference memory, and environment
+metadata, to `artifacts/benchmark.json`. `just setup`, `just demo`, `just report`, and
+`just check` are
 equivalent convenience recipes. To publish the generated report, enable GitHub Pages
 from the repository's `/docs` directory.
 
@@ -95,6 +98,10 @@ comparison rather than evidence that RoBERTa's architecture alone caused the res
 That model's author included CoNLL's original **test** split in training, so NERdact
 deliberately uses the **validation** split instead of publishing a contaminated test
 result. The command regenerates each transcript report and `docs/benchmark.html`.
+For comparable cost measurements, every checkpoint runs in a fresh process, receives one
+untimed warm-up example, and is then timed over three sequential passes through the twenty
+fictional transcripts. Use `--timing-repeats` to increase the sample count. These are
+machine-specific single-example device results, not server batching benchmarks.
 
 See [ROADMAP.md](ROADMAP.md) for the staged learning and implementation plan covering
 classic model sizing, modern encoders, runtime-selected labels, and practical PII

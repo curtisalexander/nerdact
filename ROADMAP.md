@@ -28,15 +28,22 @@ when the output taxonomy remains PERSON, ORGANIZATION, LOCATION, and MISCELLANEO
 - [x] Compare a pinned RoBERTa-large checkpoint on domain data and uncontaminated CoNLL
   validation examples.
 - [x] Add pinned `dslim/distilbert-NER` and `dslim/bert-large-NER` checkpoints.
-- [ ] Record warm latency, throughput, model download size, and peak memory on the declared
+- [x] Record warm latency, throughput, model download size, and peak memory on the declared
   test machine; quality without cost is not a complete comparison.
-- [ ] Expand the fictional transcript set with casing, punctuation, uncommon names, hard
+- [x] Expand the fictional transcript set with casing, punctuation, uncommon names, hard
   negatives, and boundary cases before interpreting small score differences.
 - [x] Publish a lesson explaining distillation, base versus large scale, and why the current
   RoBERTa comparison does not isolate architecture.
 
 **Exit evidence:** one reproducible table for all four checkpoints, per-example reports, and
 an explicit quality-versus-cost conclusion.
+
+**Completed:** [`docs/benchmark.html`](docs/benchmark.html) reports the expanded 20-transcript
+corpus, 200 uncontaminated CoNLL validation examples, per-checkpoint reports, and isolated
+warm-inference measurements from the declared Apple M5 Pro test machine. DistilBERT is the
+clear efficiency option, BERT base is the middle-cost compromise, and the practical
+RoBERTa-large checkpoint provides the best quality and lowest transcript leakage at roughly
+the same cost as BERT large. These designed examples remain too small to establish safety.
 
 ## Phase 2 — Modern fixed-label encoders
 
@@ -95,14 +102,14 @@ for evaluating private call transcripts without publishing them or their reports
 ## Cross-cutting work
 
 - [ ] Add a machine-readable benchmark manifest so report metadata is not duplicated in code.
-- [ ] Add environment metadata and deterministic timing methodology.
+- [x] Add environment metadata and deterministic timing methodology.
 - [ ] Add confidence/threshold sweeps rather than treating `0.5` as universally calibrated.
 - [ ] Enable GitHub Pages from `/docs` after all linked generated reports are committed.
 - [ ] Keep this roadmap updated with decisions, rejected candidates, and links to result pages.
 
 ## Current cautions
 
-- The ten checked-in transcripts are designed examples, not a representative test set.
+- The twenty checked-in transcripts are designed examples, not a representative test set.
 - The RoBERTa checkpoint included CoNLL's original test split in training; use validation.
 - CoNLL's Reuters-derived data has access and use restrictions described in the README.
 - Current fixed-label checkpoints are named-entity models, not general PII detectors.
