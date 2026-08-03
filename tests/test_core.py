@@ -5,7 +5,7 @@ import pytest
 from nerdact.evaluate import evaluate
 from nerdact.model import _aggregation_strategy, predictions_to_entities
 from nerdact.redact import redact
-from nerdact.report import build_results, render_html
+from nerdact.report import build_results, render_html, write_comparison
 from nerdact.schema import Entity, Example, load_jsonl
 
 
@@ -78,6 +78,38 @@ def test_report_escapes_all_content():
     page = render_html(build_results([example], [[prediction]], "<model>", "<rev>"))
     assert "<script>" not in page and "<img src=x>" not in page
     assert "&lt;script&gt;" in page and "&lt;model&gt;" in page
+
+
+def test_comparison_supports_multiple_linked_model_profiles(tmp_path):
+    example = Example("x", "Ada", (Entity(0, 3, "PERSON", "Ada"),))
+    result = build_results([example], [[Entity(0, 3, "PERSON", "Ada", 0.9)]], "model", "rev")
+    rows = [
+        {
+            "name": "Small <model>",
+            "model": "owner/model",
+            "revision": "abc",
+            "parameters": "66M",
+            "introduced": "2019",
+            "report": "small.html",
+            "domain": result,
+            "benchmark": result,
+        },
+        {
+            "name": "Large model",
+            "model": "owner/large",
+            "revision": "def",
+            "parameters": "340M",
+            "introduced": "2018",
+            "report": "large.html",
+            "domain": result,
+            "benchmark": result,
+        },
+    ]
+    output = tmp_path / "comparison.html"
+    write_comparison(rows, output, "validation", 1)
+    page = output.read_text()
+    assert 'href="small.html"' in page and 'href="large.html"' in page
+    assert "Small &lt;model&gt;" in page and "66M" in page
 
 
 def test_checked_in_data_is_valid():

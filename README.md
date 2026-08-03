@@ -20,7 +20,7 @@ uv sync
 uv run nerdact demo                  # terminal output over checked-in data
 uv run nerdact report                # artifacts/results.json + docs/index.html
 uv run nerdact redact "Mira called from Portland"
-uv run --extra benchmark nerdact compare --limit 200
+uv run --extra benchmark nerdact compare --limit 200  # four pinned checkpoints
 uv run pytest
 ```
 
@@ -80,19 +80,25 @@ loadable by modern versions of `datasets`. Its card says access/use requires agr
 and describes the original Reuters corpus restrictions; review and accept those terms
 yourself.
 
-To compare the starter against a larger model on both the synthetic transcripts and a
-clean CoNLL split, run:
+To compare four fixed-label checkpoints on both the synthetic transcripts and a clean
+CoNLL split, run:
 
 ```sh
 uv run --extra benchmark nerdact compare --limit 200
 ```
 
-This pins `Jean-Baptiste/roberta-large-ner-english`, regenerates both transcript
-reports, and writes `docs/benchmark.html`. The larger model is MIT licensed, has roughly
-three times as many parameters, reports stronger validation performance, and was tested
-by its author on informal email/chat text. Its author also included CoNLL's original
-**test** split in training, so NERdact deliberately compares both models on the
-**validation** split instead of publishing a contaminated test result.
+The comparison includes `dslim` DistilBERT, BERT-base, and BERT-large checkpoints. They
+share a publisher, four-label CoNLL task, and approximate sizes of 66M, 110M, and 340M
+parameters, making them a useful—though not perfectly controlled—size comparison. It
+also includes `Jean-Baptiste/roberta-large-ner-english` as a quality-heavy practical
+comparison rather than evidence that RoBERTa's architecture alone caused the result.
+That model's author included CoNLL's original **test** split in training, so NERdact
+deliberately uses the **validation** split instead of publishing a contaminated test
+result. The command regenerates each transcript report and `docs/benchmark.html`.
+
+See [ROADMAP.md](ROADMAP.md) for the staged learning and implementation plan covering
+classic model sizing, modern encoders, runtime-selected labels, and practical PII
+redaction.
 
 Swap models with `--model some/model-id --revision COMMIT`. Before doing so, check its
 label map and taxonomy, training domain, language and casing, maximum input length,
@@ -113,6 +119,8 @@ domain-specific validation.
 ## Provenance, licenses, and layout
 
 * `dslim/bert-base-NER` is MIT licensed; its model card documents CoNLL-2003 training.
+* `dslim/distilbert-NER` is Apache-2.0 licensed and `dslim/bert-large-NER` is MIT
+  licensed; their model cards document the same four-label CoNLL-2003 task.
 * `BramVanroy/conll2003` is fetched only on request at revision
   `4ffbd53d9e0b92b473b9b7dcff12f53e7c17ce0c`; its card identifies it as an exact,
   modern-format mirror and warns that use requires agreement under Reuters source

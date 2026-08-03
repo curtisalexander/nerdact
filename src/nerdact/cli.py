@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 from .model import DEFAULT_MODEL, DEFAULT_REVISION, HuggingFaceNER
@@ -15,8 +16,22 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA = ROOT / "data" / "transcripts.jsonl"
 DATASET = "BramVanroy/conll2003"
 DATASET_REVISION = "4ffbd53d9e0b92b473b9b7dcff12f53e7c17ce0c"
+DISTILBERT_MODEL = "dslim/distilbert-NER"
+DISTILBERT_REVISION = "dfa2838a127384aabb82ed7719e16dab84c42a2a"
+BERT_LARGE_MODEL = "dslim/bert-large-NER"
+BERT_LARGE_REVISION = "6fe43d9ec0bba0f67e367ecd74399216fc409c7f"
 CANDIDATE_MODEL = "Jean-Baptiste/roberta-large-ner-english"
 CANDIDATE_REVISION = "8f3abc1ef81ffbbb0e80568d4fed1dd10d459548"
+
+
+@dataclass(frozen=True)
+class ModelProfile:
+    name: str
+    model: str
+    revision: str
+    parameters: str
+    introduced: str
+    report: str
 
 
 def _model_args(parser: argparse.ArgumentParser) -> None:
@@ -111,12 +126,10 @@ def main() -> None:
     benchmark.add_argument("--limit", type=int, default=200)
     benchmark.add_argument("--split", choices=("validation", "test"), default="test")
     _model_args(benchmark)
-    compare = sub.add_parser("compare", help="compare the baseline with a larger NER model")
+    compare = sub.add_parser("compare", help="compare pinned fixed-label NER checkpoints")
     compare.add_argument("--data", type=Path, default=DEFAULT_DATA)
     compare.add_argument("--limit", type=int, default=200)
     compare.add_argument("--split", choices=("validation",), default="validation")
-    compare.add_argument("--candidate-model", default=CANDIDATE_MODEL)
-    compare.add_argument("--candidate-revision", default=CANDIDATE_REVISION)
     compare.add_argument("--threshold", type=float, default=0.5)
     compare.add_argument("--html", type=Path, default=Path("docs/benchmark.html"))
     args = parser.parse_args()
@@ -144,36 +157,75 @@ def main() -> None:
         domain_examples = load_jsonl(args.data)
         benchmark_examples = _conll_examples(args.limit, args.split)
         rows = []
-        for name, model, revision in (
-            ("Baseline · BERT base", DEFAULT_MODEL, DEFAULT_REVISION),
-            ("Candidate · RoBERTa large", args.candidate_model, args.candidate_revision),
-        ):
-            adapter = HuggingFaceNER(model, revision, args.threshold)
+        profiles = (
+            ModelProfile(
+                "Efficiency · DistilBERT",
+                DISTILBERT_MODEL,
+                DISTILBERT_REVISION,
+                "66M",
+                "2019",
+                "distilbert.html",
+            ),
+            ModelProfile(
+                "Baseline · BERT base",
+                DEFAULT_MODEL,
+                DEFAULT_REVISION,
+                "110M",
+                "2018",
+                "index.html",
+            ),
+            ModelProfile(
+                "Scale · BERT large",
+                BERT_LARGE_MODEL,
+                BERT_LARGE_REVISION,
+                "340M",
+                "2018",
+                "bert-large.html",
+            ),
+            ModelProfile(
+                "Quality-heavy · RoBERTa large",
+                CANDIDATE_MODEL,
+                CANDIDATE_REVISION,
+                "355M",
+                "2019",
+                "roberta-large.html",
+            ),
+        )
+        for profile in profiles:
+            adapter = HuggingFaceNER(profile.model, profile.revision, args.threshold)
             domain = build_results(
-                domain_examples, [adapter.predict(x.text) for x in domain_examples], model, revision
+                domain_examples,
+                [adapter.predict(x.text) for x in domain_examples],
+                profile.model,
+                profile.revision,
             )
             benchmark_results = build_results(
                 benchmark_examples,
                 [adapter.predict(x.text) for x in benchmark_examples],
-                model,
-                revision,
+                profile.model,
+                profile.revision,
             )
             rows.append(
                 {
-                    "name": name,
-                    "model": model,
-                    "revision": revision,
+                    "name": profile.name,
+                    "model": profile.model,
+                    "revision": profile.revision,
+                    "parameters": profile.parameters,
+                    "introduced": profile.introduced,
+                    "report": profile.report,
                     "domain": domain,
                     "benchmark": benchmark_results,
                 }
             )
-            if model == DEFAULT_MODEL:
-                write_results(domain, Path("artifacts/results.json"), Path("docs/index.html"))
-            else:
-                write_results(
-                    domain,
-                    Path("artifacts/roberta-large-results.json"),
-                    Path("docs/roberta-large.html"),
-                )
+            artifact_name = (
+                "results.json"
+                if profile.model == DEFAULT_MODEL
+                else f"{Path(profile.report).stem}-results.json"
+            )
+            write_results(
+                domain,
+                Path("artifacts") / artifact_name,
+                Path("docs") / profile.report,
+            )
         write_comparison(rows, args.html, args.split, args.limit)
-        print(f"Wrote {args.html} and both transcript reports")
+        print(f"Wrote {args.html} and {len(rows)} transcript reports")
