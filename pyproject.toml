@@ -1,0 +1,45 @@
+[project]
+name = "nerdact"
+version = "0.1.0"
+description = "A small, span-first named-entity recognition and redaction teaching project"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = [
+  "transformers>=4.48,<5",
+  "torch>=2.2",
+]
+
+[project.optional-dependencies]
+benchmark = ["datasets>=3.2,<5"]
+
+[project.scripts]
+nerdact = "nerdact.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "ruff>=0.9",
+  "ty>=0.0.1a7",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/nerdact/report.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ty.src]
+include = ["src"]
