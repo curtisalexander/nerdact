@@ -20,6 +20,7 @@ uv sync
 uv run nerdact demo                  # terminal output over checked-in data
 uv run nerdact report                # artifacts/results.json + docs/index.html
 uv run nerdact redact "Mira called from Portland"
+uv run --extra benchmark nerdact compare --limit 200
 uv run pytest
 ```
 
@@ -78,6 +79,20 @@ does not redistribute it. That mirror is an exact duplicate of `eriktks/conll200
 loadable by modern versions of `datasets`. Its card says access/use requires agreement
 and describes the original Reuters corpus restrictions; review and accept those terms
 yourself.
+
+To compare the starter against a larger model on both the synthetic transcripts and a
+clean CoNLL split, run:
+
+```sh
+uv run --extra benchmark nerdact compare --limit 200
+```
+
+This pins `Jean-Baptiste/roberta-large-ner-english`, regenerates both transcript
+reports, and writes `docs/benchmark.html`. The larger model is MIT licensed, has roughly
+three times as many parameters, reports stronger validation performance, and was tested
+by its author on informal email/chat text. Its author also included CoNLL's original
+**test** split in training, so NERdact deliberately compares both models on the
+**validation** split instead of publishing a contaminated test result.
 
 Swap models with `--model some/model-id --revision COMMIT`. Before doing so, check its
 label map and taxonomy, training domain, language and casing, maximum input length,

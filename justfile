@@ -15,6 +15,9 @@ report:
 benchmark limit="200":
     uv run --extra benchmark nerdact benchmark --limit {{limit}}
 
+compare limit="200":
+    uv run --extra benchmark nerdact compare --limit {{limit}}
+
 test:
     uv run pytest
 

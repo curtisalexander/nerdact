@@ -3,7 +3,7 @@ import json
 import pytest
 
 from nerdact.evaluate import evaluate
-from nerdact.model import predictions_to_entities
+from nerdact.model import _aggregation_strategy, predictions_to_entities
 from nerdact.redact import redact
 from nerdact.report import build_results, render_html
 from nerdact.schema import Entity, Example, load_jsonl
@@ -20,6 +20,11 @@ def test_fake_pipeline_conversion_threshold_and_labels():
         Entity(0, 3, "PERSON", "Ada", 0.99),
         Entity(11, 15, "ORGANIZATION", "Acme", 0.8),
     ]
+
+
+def test_aggregation_matches_the_models_label_contract():
+    assert _aggregation_strategy(["O", "B-PER", "I-PER"]) == "first"
+    assert _aggregation_strategy(["O", "PER", "ORG"]) == "simple"
 
 
 def test_redaction_reuses_values_and_replaces_right_to_left():

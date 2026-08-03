@@ -21,6 +21,11 @@ LABEL_MAP = {
 }
 
 
+def _aggregation_strategy(labels: Iterable[str]) -> str:
+    """Choose aggregation that matches BIO or prefix-free model labels."""
+    return "first" if any(label.startswith(("B-", "I-")) for label in labels) else "simple"
+
+
 def predictions_to_entities(
     text: str, predictions: Iterable[Mapping[str, Any]], threshold: float = 0.5
 ) -> list[Entity]:
@@ -57,15 +62,18 @@ class HuggingFaceNER:
 
     def _load(self) -> Any:
         if self._pipeline is None:
-            from transformers import pipeline
+            from transformers import AutoConfig, pipeline
 
+            config = AutoConfig.from_pretrained(self.model_name, revision=self.revision)
+            labels = [str(label) for label in config.id2label.values()]
             self._pipeline = pipeline(
                 "token-classification",
                 model=self.model_name,
                 revision=self.revision,
-                # Resolve WordPiece disagreements using the first token for each
-                # visible word, then aggregate BIO labels into complete entities.
-                aggregation_strategy="first",
+                config=config,
+                # BIO checkpoints need one decision per visible word; prefix-free
+                # checkpoints instead merge contiguous tokens with the same label.
+                aggregation_strategy=_aggregation_strategy(labels),
             )
         return self._pipeline
 
