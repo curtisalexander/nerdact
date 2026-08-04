@@ -234,10 +234,6 @@ undefined variable. The adapter uses the public schema builder and `extract_long
 the wrapper itself is intended to call, preserving overlapping chunks and global offsets
 without modifying the installed dependency.
 
-See [ROADMAP.md](ROADMAP.md) for the staged learning and implementation plan covering
-classic model sizing, modern encoders, runtime-selected labels, and practical PII
-redaction.
-
 Swap models with `--model some/model-id --revision COMMIT`. Before doing so, check its
 label map and taxonomy, training domain, language and casing, maximum input length,
 aggregation/offset behavior, license, pinned revision, calibration at your threshold,
