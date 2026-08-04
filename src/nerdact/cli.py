@@ -7,6 +7,7 @@ import json
 import math
 import multiprocessing
 import re
+import shlex
 import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -249,6 +250,15 @@ def _revision(args: argparse.Namespace) -> str | None:
     )
 
 
+def _cli_path(path: str | Path) -> str:
+    """Use portable repository-relative paths in generated reproduction commands."""
+    resolved = Path(path).resolve()
+    try:
+        return resolved.relative_to(ROOT).as_posix()
+    except ValueError:
+        return str(resolved)
+
+
 def _run_corpus(args: argparse.Namespace, make_report: bool) -> None:
     examples = load_jsonl(args.data)
     revision = _revision(args)
@@ -266,6 +276,25 @@ def _run_corpus(args: argparse.Namespace, make_report: bool) -> None:
         },
     )
     if make_report:
+        command = [
+            "uv",
+            "run",
+            "nerdact",
+            "report",
+            "--data",
+            _cli_path(args.data),
+            "--model",
+            args.model,
+            "--threshold",
+            str(args.threshold),
+            "--output",
+            _cli_path(args.output),
+            "--html",
+            _cli_path(args.html),
+        ]
+        if revision is not None:
+            command.extend(("--revision", revision))
+        results["reproduce_command"] = shlex.join(command)
         write_results(results, Path(args.output), Path(args.html))
         print(f"Wrote {args.output} and {args.html}")
     else:
@@ -443,6 +472,32 @@ def _compare_gliner(
         "runs": runs,
         "overlap_diagnostics": overlap_diagnostics,
     }
+    artifact["reproduce_command"] = shlex.join(
+        [
+            "uv",
+            "run",
+            "--extra",
+            "gliner",
+            "nerdact",
+            "compare-gliner",
+            "--data",
+            _cli_path(args.data),
+            "--schema",
+            _cli_path(args.schema),
+            "--model",
+            args.model,
+            "--revision",
+            args.revision,
+            "--thresholds",
+            *(str(value) for value in args.thresholds),
+            "--operating-threshold",
+            str(args.operating_threshold),
+            "--output",
+            _cli_path(args.output),
+            "--html",
+            _cli_path(args.html),
+        ]
+    )
     artifact["provenance"] = build_provenance(
         ROOT,
         [Path(args.data), Path(args.schema), DEFAULT_BENCHMARK_MANIFEST],
@@ -467,6 +522,7 @@ def _pii_system_results(
     examples: list[Example], model_predictions: list[list[Entity]], model: str, revision: str
 ) -> dict[str, Any]:
     rule_predictions = [detect_structured_pii(example.text) for example in examples]
+    resolved_rules = [resolve_pii_overlaps(rules) for rules in rule_predictions]
     resolutions = [
         resolve_pii_overlaps(model + rules)
         for model, rules in zip(model_predictions, rule_predictions, strict=True)
@@ -474,7 +530,11 @@ def _pii_system_results(
     return {
         "model": build_results(examples, model_predictions, model, revision, PII_LABELS),
         "rules": build_results(
-            examples, rule_predictions, "deterministic-detectors", None, PII_LABELS
+            examples,
+            [list(result.entities) for result in resolved_rules],
+            "deterministic-detectors",
+            None,
+            PII_LABELS,
         ),
         "hybrid": build_results(
             examples,
@@ -581,6 +641,32 @@ def _compare_pii(
         "calibration_runs": calibration_runs,
         "evaluation": evaluation_systems,
     }
+    artifact["reproduce_command"] = shlex.join(
+        [
+            "uv",
+            "run",
+            "--extra",
+            "pii",
+            "nerdact",
+            "compare-pii",
+            "--calibration-data",
+            _cli_path(args.calibration_data),
+            "--evaluation-data",
+            _cli_path(args.evaluation_data),
+            "--schema",
+            _cli_path(args.schema),
+            "--model",
+            args.model,
+            "--revision",
+            args.revision,
+            "--thresholds",
+            *(str(value) for value in args.thresholds),
+            "--output",
+            _cli_path(args.output),
+            "--html",
+            _cli_path(args.html),
+        ]
+    )
     artifact["provenance"] = build_provenance(
         ROOT,
         [
@@ -743,6 +829,29 @@ def main() -> None:
         rows = []
         experiment_name = "modern" if modern_comparison else "classic"
         profiles = _model_profiles(manifest, experiment_name)
+        reproduce_command = [
+            "uv",
+            "run",
+            "--extra",
+            "benchmark",
+            "nerdact",
+            args.command,
+            "--limit",
+            str(args.limit),
+            "--split",
+            args.split,
+            "--threshold",
+            str(args.threshold),
+            "--timing-repeats",
+            str(args.timing_repeats),
+            "--output",
+            _cli_path(args.output),
+            "--html",
+            _cli_path(args.html),
+        ]
+        if not modern_comparison:
+            reproduce_command.extend(("--data", _cli_path(args.data)))
+        reproduce_command_text = shlex.join(reproduce_command)
         context = multiprocessing.get_context("spawn")
         for profile in profiles:
             with context.Pool(1) as pool:
@@ -768,6 +877,7 @@ def main() -> None:
                     "timing_repeats": args.timing_repeats,
                 },
             )
+            row["domain"]["reproduce_command"] = reproduce_command_text
             rows.append(row)
             artifact_name = (
                 "results.json"
@@ -811,6 +921,7 @@ def main() -> None:
             "timing_repeats": args.timing_repeats,
             "models": rows,
             "provenance": provenance,
+            "reproduce_command": reproduce_command_text,
         }
         args.output.write_text(
             json.dumps(artifact, indent=2, ensure_ascii=False, allow_nan=False)
@@ -824,5 +935,6 @@ def main() -> None:
             args.limit,
             "modern" if modern_comparison else "classic",
             provenance,
+            reproduce_command_text,
         )
         print(f"Wrote {args.output}, {args.html}, and {len(rows)} transcript reports")

@@ -32,7 +32,8 @@ _DEVICE = re.compile(
     re.IGNORECASE,
 )
 _API_KEY = re.compile(r"(?<!\w)sk_(?:test|live)_[A-Za-z0-9_]{8,}(?!\w)")
-_TRAILING_URL_PUNCTUATION = ".,;:!?)]}"
+_TRAILING_URL_PUNCTUATION = ".,;:!?"
+_URL_DELIMITERS = {")": "(", "]": "[", "}": "{"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,8 +60,17 @@ def _email_matches(text: str) -> Iterator[tuple[int, int]]:
 def _url_matches(text: str) -> Iterator[tuple[int, int]]:
     for match in _URL.finditer(text):
         start, end = match.span()
-        while end > start and text[end - 1] in _TRAILING_URL_PUNCTUATION:
-            end -= 1
+        while end > start:
+            last = text[end - 1]
+            if last in _TRAILING_URL_PUNCTUATION:
+                end -= 1
+                continue
+            opener = _URL_DELIMITERS.get(last)
+            candidate = text[start:end]
+            if opener is not None and candidate.count(last) > candidate.count(opener):
+                end -= 1
+                continue
+            break
         if end > start:
             yield start, end
 

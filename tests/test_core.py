@@ -6,6 +6,7 @@ import pytest
 from nerdact.cli import (
     _long_context_examples,
     _model_profiles,
+    _pii_system_results,
     _select_recall_threshold,
     _validate_pii_splits,
     load_benchmark_manifest,
@@ -311,6 +312,35 @@ def test_structured_detectors_preserve_rule_provenance_and_exact_spans():
     ]
 
 
+def test_url_detector_preserves_balanced_delimiters_and_trims_prose_delimiters():
+    text = (
+        "See https://example.test/a(b), https://example.test/x[y], and "
+        "(https://example.test/plain)."
+    )
+    assert [entity.text for entity in detect_structured_pii(text)] == [
+        "https://example.test/a(b)",
+        "https://example.test/x[y]",
+        "https://example.test/plain",
+    ]
+
+
+def test_rules_only_pii_results_resolve_nested_structured_findings():
+    text = "Open https://192.0.2.44/reset"
+    example = Example("nested-rules", text, (Entity(5, len(text), "URL", text[5:]),))
+    systems = _pii_system_results([example], [[]], "model", "revision")
+
+    assert systems["rules"]["examples"][0]["predictions"] == [
+        {
+            "start": 5,
+            "end": len(text),
+            "label": "URL",
+            "text": text[5:],
+            "score": 1.0,
+            "provenance": ("detector:url",),
+        }
+    ]
+
+
 def test_checked_in_pii_rules_cover_supported_structures_without_negative_hits():
     examples = load_jsonl("data/pii-calibration.jsonl", PII_LABELS) + load_jsonl(
         "data/pii-evaluation.jsonl", PII_LABELS
@@ -527,6 +557,23 @@ def test_report_escapes_all_content():
     page = render_html(build_results([example], [[prediction]], "<model>", "<rev>"))
     assert "<script>" not in page and "<img src=x>" not in page
     assert "&lt;script&gt;" in page and "&lt;model&gt;" in page
+    assert "How token predictions become evaluated redactions" in page
+    assert all(
+        f'id="{section}"' in page
+        for section in ("ner", "spans", "evaluation", "results", "redaction", "limits", "reproduce")
+    )
+    assert 'class="case"' in page and "Recreate this report" in page
+
+
+def test_report_supports_scoreless_predictions_and_escapes_reproduction_command():
+    example = Example("x", "Ada", (Entity(0, 3, "PERSON", "Ada"),))
+    results = build_results([example], [[Entity(0, 3, "PERSON", "Ada")]], "model", "revision")
+    results["reproduce_command"] = 'nerdact report --model "<model>"'
+
+    page = render_html(results)
+
+    assert "score unavailable" not in page
+    assert "nerdact report --model &quot;&lt;model&gt;&quot;" in page
 
 
 def test_provenance_fingerprints_inputs_options_and_surfaces_run_id(tmp_path):
@@ -640,7 +687,7 @@ def test_comparison_supports_multiple_linked_model_profiles(tmp_path):
     assert 'href="small.html"' in page and 'href="large.html"' in page
     assert "Small &lt;model&gt;" in page and "66M" in page
     assert "12.3 ms" in page and "1 MiB" in page and "Test CPU" in page
-    assert "same 1 fictional call transcript" in page
+    assert "same 1 domain transcript" in page
     assert "Quality versus cost conclusion" in page
 
 

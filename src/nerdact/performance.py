@@ -33,7 +33,7 @@ def _accelerator_memory(device: str) -> tuple[int, str]:
     if device.startswith("cuda"):
         return torch.cuda.max_memory_reserved(), "CUDA reserved"
     if device.startswith("mps"):
-        return torch.mps.driver_allocated_memory(), "MPS driver allocated"
+        return torch.mps.driver_allocated_memory(), "MPS post-inference sample"
     return 0, "process RSS"
 
 

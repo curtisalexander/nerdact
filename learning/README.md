@@ -7,18 +7,25 @@ those existing paths stable makes every published result reproducible.
 
 ## Suggested path
 
-1. **Token classification to source spans** — read [From tokens to stable spans](../README.md#from-tokens-to-stable-spans), then inspect `model.py`, `schema.py`, and `redact.py` in
-   [`src/nerdact`](../src/nerdact/).
-2. **Exact-span evaluation and redaction risk** — read [Evaluation and redaction](../README.md#evaluation-and-redaction) and the generated [baseline report](../docs/index.html).
+Start with the shared foundation:
+
+1. **NER and source spans** — follow sections 1–2 of the
+   [published baseline lesson](https://curtisalexander.github.io/nerdact/#ner), then inspect
+   `model.py`, `schema.py`, and `redact.py` in [`src/nerdact`](../src/nerdact/).
+2. **Exact evaluation and redaction risk** — continue through
+   [evaluation, results, and redaction](https://curtisalexander.github.io/nerdact/#evaluation).
 3. **Classic model comparison** — compare DistilBERT, BERT-base, BERT-large, and RoBERTa-large
-   in the [classic checkpoint report](../docs/benchmark.html). This evaluation motivates the
+   in the [classic checkpoint report](https://curtisalexander.github.io/nerdact/benchmark.html). This evaluation motivates the
    minimal [RoBERTa example](../examples/roberta_ner/).
-4. **Long context and modern encoders** — review the [modern encoder lesson](../docs/modern-encoders.html), including why a newer architecture did not automatically produce a
-   better NER checkpoint.
-5. **Runtime-selected labels** — review the [GLiNER lesson](../docs/runtime-labels.html). It
-   demonstrates dynamic labels as a tradeoff, not a requirement for ordinary NER.
-6. **Practical PII** — review the separate taxonomy, calibration split, deterministic rules,
-   model limitations, and conflict resolution in the [practical PII lesson](../docs/practical-pii.html). This evaluation motivates the alternative
+
+Then choose what matters to you:
+
+- **Implement fixed-label NER:** stop at the [RoBERTa example](../examples/roberta_ner/).
+- **Study long inputs:** review the [modern encoder lesson](https://curtisalexander.github.io/nerdact/modern-encoders.html),
+  including why a newer architecture did not automatically produce a better NER checkpoint.
+- **Explore broader PII:** read the [runtime-label lesson](https://curtisalexander.github.io/nerdact/runtime-labels.html) as an
+  optional bridge, then review the separate taxonomy, calibration split, deterministic rules,
+   model limitations, and conflict resolution in the [practical PII lesson](https://curtisalexander.github.io/nerdact/practical-pii.html). This evaluation motivates the alternative
    [hybrid PII example](../examples/gliner2_pii_hybrid/).
 
 ## Reproduce the lessons
