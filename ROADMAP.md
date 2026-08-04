@@ -4,6 +4,10 @@ NERdact is both executable software and a worked lesson. Each phase must therefo
 behind reproducible code, pinned inputs, measured results, and documentation that explains
 what the experiment can and cannot establish.
 
+**Status: complete.** All four phases and cross-cutting tasks are reproducible from the
+checked-in inputs. The fictional public reports are published at
+[`curtisalexander.github.io/nerdact`](https://curtisalexander.github.io/nerdact/).
+
 ## Comparison rules
 
 - Benchmark complete checkpoints, not architecture names. Record the model ID, revision,
@@ -169,8 +173,8 @@ designed fixtures are too small to estimate production safety.
 - [x] Add a machine-readable benchmark manifest so report metadata is not duplicated in code.
 - [x] Add environment metadata and deterministic timing methodology.
 - [x] Add confidence/threshold sweeps rather than treating `0.5` as universally calibrated.
-- [ ] Enable GitHub Pages from `/docs` after all linked generated reports are committed.
-- [ ] Keep this roadmap updated with decisions, rejected candidates, and links to result pages.
+- [x] Enable GitHub Pages from `/docs` after all linked generated reports are committed.
+- [x] Keep this roadmap updated with decisions, rejected candidates, and links to result pages.
 
 ## Current cautions
 

@@ -31,9 +31,9 @@ The first inference command downloads model weights into Hugging Face's cache; m
 files are not committed. `compare` also writes machine-readable results, including
 warm latency, throughput, cached snapshot size, peak inference memory, and environment
 metadata, to `artifacts/benchmark.json`. `just setup`, `just demo`, `just report`, and
-`just check` are
-equivalent convenience recipes. To publish the generated report, enable GitHub Pages
-from the repository's `/docs` directory.
+`just check` are equivalent convenience recipes. The checked-in fictional reports are
+published from `/docs` at
+[`curtisalexander.github.io/nerdact`](https://curtisalexander.github.io/nerdact/).
 
 ## From tokens to stable spans
 
