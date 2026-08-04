@@ -100,7 +100,7 @@
       "split": "validation",
       "profiles": [
         {"checkpoint": "distilbert", "name": "Efficiency · DistilBERT", "report": "distilbert.html"},
-        {"checkpoint": "bert-base", "name": "Baseline · BERT base", "report": "index.html"},
+        {"checkpoint": "bert-base", "name": "Baseline · BERT base", "report": "baseline.html"},
         {"checkpoint": "bert-large", "name": "Scale · BERT large", "report": "bert-large.html"},
         {"checkpoint": "roberta-large", "name": "Quality-heavy · RoBERTa large", "report": "roberta-large.html"}
       ]

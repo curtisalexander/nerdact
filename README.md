@@ -14,7 +14,8 @@ not—transfer to conversational text.
 
 | I want to… | Start here |
 | --- | --- |
-| Understand NER, spans, evaluation, and redaction | [Baseline visual lesson](https://curtisalexander.github.io/nerdact/) → [`learning/`](learning/) |
+| Understand NER, spans, evaluation, and redaction | [Learning home](https://curtisalexander.github.io/nerdact/) → [baseline visual lesson](https://curtisalexander.github.io/nerdact/baseline.html) |
+| Jump directly to the implementation choice | [TL;DR and next steps](https://curtisalexander.github.io/nerdact/conclusion.html) |
 | Reproduce or audit the experiments | [`learning/` reproduction guide](learning/README.md#reproduce-the-lessons) → [`data/benchmark-manifest.json`](data/benchmark-manifest.json) |
 | Build from a small implementation | [`examples/`](examples/) |
 
@@ -35,7 +36,7 @@ Python 3.11+ and [uv](https://docs.astral.sh/uv/) are required.
 uv sync
 uv run nerdact demo
 uv run nerdact redact "Mira called from Portland"
-uv run nerdact report  # artifacts/results.json + docs/index.html
+uv run nerdact report  # artifacts/results.json + docs/baseline.html
 ```
 
 The first inference command downloads pinned model weights into Hugging Face's cache.
@@ -68,14 +69,14 @@ occurrences of the same label and exact text reuse a placeholder. A miss remains
 wrong label produces the wrong placeholder type, and retained context may still identify a
 person.
 
-The [baseline lesson](https://curtisalexander.github.io/nerdact/) demonstrates this flow with
+The [baseline lesson](https://curtisalexander.github.io/nerdact/baseline.html) demonstrates this flow with
 real predictions before introducing the aggregate metrics.
 
 ## What the experiments teach
 
 | Experiment | Question | Main lesson |
 | --- | --- | --- |
-| [Baseline](https://curtisalexander.github.io/nerdact/) | What fails when newswire NER meets fictional calls? | Casing, boundaries, products, and support language create inspectable errors. |
+| [Baseline](https://curtisalexander.github.io/nerdact/baseline.html) | What fails when newswire NER meets fictional calls? | Casing, boundaries, products, and support language create inspectable errors. |
 | [Classic checkpoints](https://curtisalexander.github.io/nerdact/benchmark.html) | How do four fixed-label checkpoints compare? | The strongest measured checkpoint motivated the small RoBERTa example; size alone does not explain quality. |
 | [Modern encoders](https://curtisalexander.github.io/nerdact/modern-encoders.html) | Does a longer context window solve long-input NER? | Architectural capacity is not the same as task-specific fine-tuning quality; overlapping BERT windows performed better here. |
 | [Runtime labels](https://curtisalexander.github.io/nerdact/runtime-labels.html) | What changes when labels become inference inputs? | Prompt wording and thresholds change behavior without changing weights and require careful evaluation. |

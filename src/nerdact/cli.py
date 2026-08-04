@@ -34,6 +34,7 @@ from .redact import redact
 from .report import (
     build_results,
     write_comparison,
+    write_landing_page,
     write_learning_summary,
     write_pii_comparison,
     write_results,
@@ -714,7 +715,7 @@ def main() -> None:
         _model_args(command)
         if name == "report":
             command.add_argument("--output", default="artifacts/results.json")
-            command.add_argument("--html", default="docs/index.html")
+            command.add_argument("--html", default="docs/baseline.html")
     text_parser = sub.add_parser("redact", help="redact arbitrary text")
     text_parser.add_argument("text", nargs="?", help="text; reads stdin when omitted")
     _model_args(text_parser)
@@ -774,13 +775,14 @@ def main() -> None:
     pii.add_argument("--output", type=Path, default=Path("artifacts/pii-benchmark.json"))
     pii.add_argument("--html", type=Path, default=Path("docs/practical-pii.html"))
     summary = sub.add_parser(
-        "summarize", help="write the conclusions page from checked-in benchmark artifacts"
+        "summarize", help="write the landing and conclusion pages from benchmark artifacts"
     )
     summary.add_argument(
         "--benchmark", type=Path, default=Path("artifacts/benchmark.json")
     )
     summary.add_argument("--pii", type=Path, default=Path("artifacts/pii-benchmark.json"))
     summary.add_argument("--html", type=Path, default=Path("docs/conclusion.html"))
+    summary.add_argument("--landing", type=Path, default=Path("docs/index.html"))
     args = parser.parse_args()
     scalar_thresholds = [
         value
@@ -815,7 +817,8 @@ def main() -> None:
             json.loads(args.pii.read_text(encoding="utf-8")),
             args.html,
         )
-        print(f"Wrote {args.html}")
+        write_landing_page(args.landing)
+        print(f"Wrote {args.landing} and {args.html}")
     elif args.command in ("demo", "report"):
         _run_corpus(args, args.command == "report")
     elif args.command == "redact":

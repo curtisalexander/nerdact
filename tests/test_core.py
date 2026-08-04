@@ -36,6 +36,7 @@ from nerdact.report import (
     build_results,
     render_html,
     write_comparison,
+    write_landing_page,
     write_learning_summary,
     write_pii_comparison,
 )
@@ -156,7 +157,7 @@ def test_benchmark_manifest_is_the_profile_and_dataset_source_of_truth():
     ]
     assert [profile.report for profile in classic] == [
         "distilbert.html",
-        "index.html",
+        "baseline.html",
         "bert-large.html",
         "roberta-large.html",
     ]
@@ -629,9 +630,50 @@ def test_pii_report_escapes_originals_and_metadata(tmp_path):
 
 
 def test_learning_summary_connects_results_to_examples(tmp_path):
-    root = Path(__file__).resolve().parents[1]
-    benchmark = json.loads((root / "artifacts/benchmark.json").read_text())
-    pii = json.loads((root / "artifacts/pii-benchmark.json").read_text())
+    benchmark = {
+        "models": [
+            {
+                "report": "roberta-large.html",
+                "model": "owner/roberta",
+                "domain": {
+                    "metrics": {
+                        "micro": {"f1": 0.88, "precision": 0.87},
+                        "characters": {
+                            "leakage_rate": 0.02,
+                            "leaked_gold_characters": 9,
+                            "gold_entity_characters": 475,
+                        },
+                    },
+                    "examples": [
+                        {"id": "lowercase", "text": "ada works at acme"},
+                        {"id": "boundary-slashes", "text": "Ada/at Acme"},
+                    ],
+                },
+            }
+        ]
+    }
+    model_metrics = {
+        "micro": {"f1": 0.78},
+        "characters": {"leakage_rate": 0.27},
+    }
+    hybrid_metrics = {
+        "micro": {"f1": 0.92, "recall": 0.88},
+        "characters": {"leakage_rate": 0.15},
+    }
+    pii = {
+        "model": "owner/gliner2",
+        "evaluation": {
+            "model": {"metrics": model_metrics},
+            "hybrid": {
+                "metrics": hybrid_metrics,
+                "examples": [
+                    {"id": "pii-eval-contact", "text": "Ada, ada@example.test"},
+                    {"id": "pii-eval-unicode-address", "text": "Ada at 8 Rue Exemple"},
+                    {"id": "pii-eval-password-spaces", "text": "correct horse demo"},
+                ],
+            },
+        },
+    }
     output = tmp_path / "conclusion.html"
 
     write_learning_summary(benchmark, pii, output)
@@ -641,6 +683,18 @@ def test_learning_summary_connects_results_to_examples(tmp_path):
     assert "The GLiNER2 model is only one half" in page
     assert "examples/roberta_ner" in page and "examples/gliner2_pii_hybrid" in page
     assert "Do not compare the two headline F1 scores as a race" in page
+
+
+def test_landing_page_offers_learning_answer_and_code_paths(tmp_path):
+    output = tmp_path / "index.html"
+
+    write_landing_page(output)
+
+    page = output.read_text()
+    assert 'href="baseline.html"' in page
+    assert 'href="conclusion.html"' in page
+    assert "Open examples" in page
+    assert 'aria-current="page">Home</a>' in page
 
 
 def test_comparison_supports_multiple_linked_model_profiles(tmp_path):

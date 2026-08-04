@@ -10,11 +10,11 @@ those existing paths stable makes every published result reproducible.
 Start with the shared foundation, then choose an outcome:
 
 1. **NER and source spans** — follow sections 1–2 of the
-   [published baseline lesson](https://curtisalexander.github.io/nerdact/#ner), then inspect
+   [published baseline lesson](https://curtisalexander.github.io/nerdact/baseline.html#ner), then inspect
    `model.py`, `schema.py`, and `redact.py` in [`src/nerdact`](../src/nerdact/). Every result
    on that page comes from `dslim/bert-base-NER` (BERT-base, not DistilBERT).
 2. **Exact evaluation and redaction risk** — continue through
-   [evaluation, results, and redaction](https://curtisalexander.github.io/nerdact/#evaluation).
+   [evaluation, results, and redaction](https://curtisalexander.github.io/nerdact/baseline.html#evaluation).
 3. **Read the conclusion** — use the
    [TL;DR and next steps](https://curtisalexander.github.io/nerdact/conclusion.html) to choose
    fixed-label RoBERTa NER or the broader GLiNER2 hybrid PII system.
