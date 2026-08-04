@@ -6,7 +6,7 @@ from collections import defaultdict
 from collections.abc import Collection, Sequence
 from typing import Any
 
-from .schema import LABELS, Entity, Example
+from .schema import LABELS, Entity, Example, validate_entities
 
 
 def _ratio(numerator: int | float, denominator: int | float) -> float:
@@ -40,6 +40,14 @@ def evaluate(
     gold_chars = predicted_chars = leaked_chars = extra_chars = total_chars = 0
     transcripts_with_leaks = 0
     for example, predicted in zip(examples, predictions, strict=True):
+        validate_entities(example.text, example.entities)
+        validate_entities(example.text, predicted)
+        gold_key_list = [entity.key() for entity in example.entities]
+        pred_key_list = [entity.key() for entity in predicted]
+        if len(gold_key_list) != len(set(gold_key_list)):
+            raise ValueError(f"{example.id}: duplicate gold entities")
+        if len(pred_key_list) != len(set(pred_key_list)):
+            raise ValueError(f"{example.id}: duplicate predicted entities")
         observed_labels = {entity.label for entity in example.entities} | {
             entity.label for entity in predicted
         }

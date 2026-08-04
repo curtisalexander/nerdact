@@ -49,6 +49,7 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = ["integration: opt-in tests using cached pinned model weights"]
 
 [tool.ty.src]
 include = ["src"]

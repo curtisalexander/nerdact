@@ -30,6 +30,9 @@ compare-pii:
 test:
     uv run pytest
 
+integration-test:
+    HF_HUB_OFFLINE=1 NERDACT_RUN_INTEGRATION=1 uv run pytest tests/test_integration.py
+
 lint:
     uv run ruff check .
 

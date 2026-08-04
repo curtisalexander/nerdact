@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -51,28 +52,49 @@ def predictions_to_entities(
     text: str, predictions: Iterable[Mapping[str, Any]], threshold: float = 0.5
 ) -> list[Entity]:
     """Validate and normalize aggregated pipeline predictions."""
-    entities: list[Entity] = []
+    _validate_threshold(threshold)
+    entities: dict[tuple[int, int, str], Entity] = {}
     for item in predictions:
-        score = float(item["score"])
-        if score < threshold:
-            continue
-        start, end = int(item["start"]), int(item["end"])
-        # Byte-level tokenizers may include separator whitespace in an aggregate's
-        # offset even though whitespace is outside the BIO-labeled word.
-        while start < end and text[start].isspace():
-            start += 1
-        while start < end and text[end - 1].isspace():
-            end -= 1
         raw_label = (
             str(item.get("entity_group", item.get("entity", "")))
             .removeprefix("B-")
             .removeprefix("I-")
         )
         label = LABEL_MAP.get(raw_label)
-        if label is None or not (0 <= start < end <= len(text)):
+        if label is None:
             continue
-        entities.append(Entity(start, end, label, text[start:end], score))
-    return sorted(entities)
+        score = float(item["score"])
+        if not math.isfinite(score) or not 0 <= score <= 1:
+            raise ValueError("prediction score must be finite and between 0 and 1")
+        if score < threshold:
+            continue
+        start, end = item["start"], item["end"]
+        if (
+            not isinstance(start, int)
+            or isinstance(start, bool)
+            or not isinstance(end, int)
+            or isinstance(end, bool)
+            or not (0 <= start < end <= len(text))
+        ):
+            raise ValueError("prediction offsets must be valid integer source offsets")
+        # Byte-level tokenizers may include separator whitespace in an aggregate's
+        # offset even though whitespace is outside the BIO-labeled word.
+        while start < end and text[start].isspace():
+            start += 1
+        while start < end and text[end - 1].isspace():
+            end -= 1
+        if start == end:
+            continue
+        entity = Entity(start, end, label, text[start:end], score)
+        previous = entities.get(entity.key())
+        if previous is None or score > float(previous.score or 0):
+            entities[entity.key()] = entity
+    return sorted(entities.values())
+
+
+def _validate_threshold(threshold: float) -> None:
+    if not math.isfinite(threshold) or not 0 <= threshold <= 1:
+        raise ValueError("threshold must be finite and between 0 and 1")
 
 
 class HuggingFaceNER:
@@ -85,6 +107,7 @@ class HuggingFaceNER:
     ) -> None:
         if stride < 0:
             raise ValueError("stride must be non-negative")
+        _validate_threshold(threshold)
         self.model_name = model
         self.revision = revision
         self.threshold = threshold

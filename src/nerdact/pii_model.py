@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib import import_module
@@ -84,10 +85,18 @@ def gliner2_predictions_to_entities(
         for item in predictions:
             if not isinstance(item, Mapping):
                 continue
-            start, end = int(item["start"]), int(item["end"])
+            start, end = item["start"], item["end"]
             score = float(item["confidence"])
-            if not (0 <= start < end <= len(text)):
-                continue
+            if not math.isfinite(score) or not 0 <= score <= 1:
+                raise ValueError("prediction score must be finite and between 0 and 1")
+            if (
+                not isinstance(start, int)
+                or isinstance(start, bool)
+                or not isinstance(end, int)
+                or isinstance(end, bool)
+                or not (0 <= start < end <= len(text))
+            ):
+                raise ValueError("prediction offsets must be valid integer source offsets")
             entity = Entity(start, end, canonical, text[start:end], score)
             key = entity.key()
             previous = entities.get(key)

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import multiprocessing
+import re
+import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -25,6 +28,7 @@ from .pii_model import (
     GLiNER2PIIAdapter,
     load_pii_schema,
 )
+from .provenance import build_provenance
 from .redact import redact
 from .report import (
     build_results,
@@ -251,6 +255,16 @@ def _run_corpus(args: argparse.Namespace, make_report: bool) -> None:
     adapter = HuggingFaceNER(args.model, revision, args.threshold)
     predictions = [adapter.predict(example.text) for example in examples]
     results = build_results(examples, predictions, args.model, revision)
+    results["provenance"] = build_provenance(
+        ROOT,
+        [Path(args.data), DEFAULT_BENCHMARK_MANIFEST],
+        {
+            "command": "report" if make_report else "demo",
+            "model": args.model,
+            "revision": revision,
+            "threshold": args.threshold,
+        },
+    )
     if make_report:
         write_results(results, Path(args.output), Path(args.html))
         print(f"Wrote {args.output} and {args.html}")
@@ -429,9 +443,21 @@ def _compare_gliner(
         "runs": runs,
         "overlap_diagnostics": overlap_diagnostics,
     }
+    artifact["provenance"] = build_provenance(
+        ROOT,
+        [Path(args.data), Path(args.schema), DEFAULT_BENCHMARK_MANIFEST],
+        {
+            "command": "compare-gliner",
+            "model": args.model,
+            "revision": args.revision,
+            "thresholds": args.thresholds,
+            "operating_threshold": args.operating_threshold,
+        },
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        json.dumps(artifact, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        json.dumps(artifact, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
     )
     write_runtime_comparison(artifact, args.html)
     print(f"Wrote {args.output} and {args.html}")
@@ -480,11 +506,39 @@ def _select_recall_threshold(runs: list[dict[str, Any]]) -> float:
     return min(runs, key=rank)["threshold"]
 
 
+def _validate_pii_splits(
+    calibration_path: Path,
+    evaluation_path: Path,
+    calibration: list[Example],
+    evaluation: list[Example],
+) -> None:
+    """Reject evaluation data that is not locally independent from calibration."""
+    if calibration_path.resolve() == evaluation_path.resolve():
+        raise ValueError("calibration and evaluation data must be different files")
+    shared_ids = {example.id for example in calibration} & {example.id for example in evaluation}
+    if shared_ids:
+        raise ValueError(f"calibration and evaluation IDs overlap: {sorted(shared_ids)}")
+
+    def normalized(text: str) -> str:
+        return re.sub(r"\s+", " ", unicodedata.normalize("NFKC", text)).strip().casefold()
+
+    calibration_texts = {normalized(example.text) for example in calibration}
+    duplicate_text_ids = [
+        example.id for example in evaluation if normalized(example.text) in calibration_texts
+    ]
+    if duplicate_text_ids:
+        raise ValueError(
+            "calibration and evaluation contain duplicate normalized text in evaluation IDs: "
+            f"{sorted(duplicate_text_ids)}"
+        )
+
+
 def _compare_pii(
     args: argparse.Namespace, checkpoint: dict[str, Any], manifest_schema_version: int
 ) -> None:
     calibration = load_jsonl(args.calibration_data, PII_LABELS)
     evaluation = load_jsonl(args.evaluation_data, PII_LABELS)
+    _validate_pii_splits(args.calibration_data, args.evaluation_data, calibration, evaluation)
     schema = load_pii_schema(args.schema)
     adapter = GLiNER2PIIAdapter(schema, args.model, args.revision, min(args.thresholds))
     calibration_runs = []
@@ -527,9 +581,26 @@ def _compare_pii(
         "calibration_runs": calibration_runs,
         "evaluation": evaluation_systems,
     }
+    artifact["provenance"] = build_provenance(
+        ROOT,
+        [
+            Path(args.calibration_data),
+            Path(args.evaluation_data),
+            Path(args.schema),
+            DEFAULT_BENCHMARK_MANIFEST,
+        ],
+        {
+            "command": "compare-pii",
+            "model": args.model,
+            "revision": args.revision,
+            "thresholds": args.thresholds,
+            "operating_threshold": operating_threshold,
+        },
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
-        json.dumps(artifact, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        json.dumps(artifact, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+        encoding="utf-8",
     )
     write_pii_comparison(artifact, args.html)
     print(
@@ -616,9 +687,18 @@ def main() -> None:
     pii.add_argument("--output", type=Path, default=Path("artifacts/pii-benchmark.json"))
     pii.add_argument("--html", type=Path, default=Path("docs/practical-pii.html"))
     args = parser.parse_args()
+    scalar_thresholds = [
+        value
+        for name in ("threshold", "operating_threshold")
+        if (value := getattr(args, name, None)) is not None
+    ]
+    if any(not math.isfinite(value) or not 0 <= value <= 1 for value in scalar_thresholds):
+        parser.error("thresholds must be finite and between 0 and 1")
     if args.command in ("compare-gliner", "compare-pii"):
-        if any(not 0 <= threshold <= 1 for threshold in args.thresholds):
-            parser.error("--thresholds must be between 0 and 1")
+        if any(
+            not math.isfinite(value) or not 0 <= value <= 1 for value in args.thresholds
+        ):
+            parser.error("--thresholds must be finite and between 0 and 1")
         if len(args.thresholds) != len(set(args.thresholds)):
             parser.error("--thresholds must be unique")
     if args.command == "compare-gliner":
@@ -676,6 +756,18 @@ def main() -> None:
                         args.timing_repeats,
                     ),
                 )
+            row["domain"]["provenance"] = build_provenance(
+                ROOT,
+                [DEFAULT_BENCHMARK_MANIFEST]
+                + ([] if modern_comparison else [Path(args.data)]),
+                {
+                    "command": args.command,
+                    "model": profile.model,
+                    "revision": profile.revision,
+                    "threshold": args.threshold,
+                    "timing_repeats": args.timing_repeats,
+                },
+            )
             rows.append(row)
             artifact_name = (
                 "results.json"
@@ -688,32 +780,49 @@ def main() -> None:
                 Path("docs") / profile.report,
             )
         args.output.parent.mkdir(parents=True, exist_ok=True)
+        provenance = build_provenance(
+            ROOT,
+            [DEFAULT_BENCHMARK_MANIFEST] + ([] if modern_comparison else [Path(args.data)]),
+            {
+                "command": args.command,
+                "experiment": experiment_name,
+                "dataset": conll["id"],
+                "dataset_revision": conll["revision"],
+                "split": args.split,
+                "limit": args.limit,
+                "threshold": args.threshold,
+                "timing_repeats": args.timing_repeats,
+            },
+        )
+        artifact = {
+            "manifest": str(BENCHMARK_MANIFEST_REFERENCE),
+            "manifest_schema_version": manifest["schema_version"],
+            "experiment": experiment_name,
+            "dataset": conll["id"],
+            "dataset_revision": conll["revision"],
+            "split": args.split,
+            "limit": args.limit,
+            "threshold": args.threshold,
+            "timing_corpus": (
+                "deterministic long-context fixtures in nerdact.cli"
+                if modern_comparison
+                else str(args.data)
+            ),
+            "timing_repeats": args.timing_repeats,
+            "models": rows,
+            "provenance": provenance,
+        }
         args.output.write_text(
-            json.dumps(
-                {
-                    "manifest": str(BENCHMARK_MANIFEST_REFERENCE),
-                    "manifest_schema_version": manifest["schema_version"],
-                    "experiment": experiment_name,
-                    "dataset": conll["id"],
-                    "dataset_revision": conll["revision"],
-                    "split": args.split,
-                    "limit": args.limit,
-                    "threshold": args.threshold,
-                    "timing_corpus": (
-                        "deterministic long-context fixtures in nerdact.cli"
-                        if modern_comparison
-                        else str(args.data)
-                    ),
-                    "timing_repeats": args.timing_repeats,
-                    "models": rows,
-                },
-                indent=2,
-                ensure_ascii=False,
-            )
+            json.dumps(artifact, indent=2, ensure_ascii=False, allow_nan=False)
             + "\n",
             encoding="utf-8",
         )
         write_comparison(
-            rows, args.html, args.split, args.limit, "modern" if modern_comparison else "classic"
+            rows,
+            args.html,
+            args.split,
+            args.limit,
+            "modern" if modern_comparison else "classic",
+            provenance,
         )
         print(f"Wrote {args.output}, {args.html}, and {len(rows)} transcript reports")

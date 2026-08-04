@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 
-from .schema import Entity
+from .schema import Entity, validate_entities
 
 
 def redact(
@@ -10,6 +10,7 @@ def redact(
 ) -> tuple[str, list[tuple[Entity, str]]]:
     """Assign placeholders in reading order, reusing identical label/text values."""
     ordered = sorted(entities)
+    validate_entities(text, ordered)
     if any(a.end > b.start for a, b in zip(ordered, ordered[1:], strict=False)):
         raise ValueError("cannot redact overlapping entities")
     counts: dict[str, int] = defaultdict(int)

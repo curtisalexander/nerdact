@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from importlib import import_module
@@ -67,15 +68,28 @@ def gliner_predictions_to_entities(
     label_map: Mapping[str, str],
 ) -> list[Entity]:
     """Validate GLiNER's native span output and normalize requested labels."""
-    entities = []
+    entities: dict[tuple[int, int, str], Entity] = {}
     for item in predictions:
-        start, end = int(item["start"]), int(item["end"])
         label = label_map.get(str(item["label"]).casefold())
-        score = float(item["score"])
-        if label is None or not (0 <= start < end <= len(text)):
+        if label is None:
             continue
-        entities.append(Entity(start, end, label, text[start:end], score))
-    return sorted(entities)
+        start, end = item["start"], item["end"]
+        score = float(item["score"])
+        if not math.isfinite(score) or not 0 <= score <= 1:
+            raise ValueError("prediction score must be finite and between 0 and 1")
+        if (
+            not isinstance(start, int)
+            or isinstance(start, bool)
+            or not isinstance(end, int)
+            or isinstance(end, bool)
+            or not (0 <= start < end <= len(text))
+        ):
+            raise ValueError("prediction offsets must be valid integer source offsets")
+        entity = Entity(start, end, label, text[start:end], score)
+        previous = entities.get(entity.key())
+        if previous is None or score > float(previous.score or 0):
+            entities[entity.key()] = entity
+    return sorted(entities.values())
 
 
 class GLiNERAdapter:

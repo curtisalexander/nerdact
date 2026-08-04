@@ -7,6 +7,7 @@ from nerdact.cli import (
     _long_context_examples,
     _model_profiles,
     _select_recall_threshold,
+    _validate_pii_splits,
     load_benchmark_manifest,
 )
 from nerdact.detectors import detect_structured_pii
@@ -28,6 +29,7 @@ from nerdact.pii_model import (
     gliner2_predictions_to_entities,
     load_pii_schema,
 )
+from nerdact.provenance import build_provenance
 from nerdact.redact import redact
 from nerdact.report import build_results, render_html, write_comparison, write_pii_comparison
 from nerdact.schema import PII_LABELS, Entity, Example, load_jsonl
@@ -50,6 +52,31 @@ def test_prediction_offsets_exclude_tokenizer_separator_whitespace():
     text = "Ada met Mira Sol today"
     fake = [{"entity_group": "PER", "start": 7, "end": 16, "score": 0.9}]
     assert predictions_to_entities(text, fake) == [Entity(8, 16, "PERSON", "Mira Sol", 0.9)]
+
+
+def test_hugging_face_conversion_rejects_bad_offsets_and_deduplicates_windows():
+    text = "Ada joined Acme"
+    duplicate_predictions = [
+        {"entity_group": "PER", "start": 0, "end": 3, "score": 0.8},
+        {"entity_group": "PER", "start": 0, "end": 3, "score": 0.9},
+    ]
+    assert predictions_to_entities(text, duplicate_predictions) == [
+        Entity(0, 3, "PERSON", "Ada", 0.9)
+    ]
+    with pytest.raises(ValueError, match="offsets"):
+        predictions_to_entities(
+            text, [{"entity_group": "PER", "start": -1, "end": 3, "score": 0.9}]
+        )
+    with pytest.raises(ValueError, match="finite"):
+        predictions_to_entities(
+            text, [{"entity_group": "PER", "start": 0, "end": 3, "score": float("nan")}]
+        )
+
+
+def test_fixed_adapter_rejects_invalid_thresholds():
+    for threshold in (-0.1, 1.1, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="threshold"):
+            HuggingFaceNER(threshold=threshold)
 
 
 def test_aggregation_matches_the_models_label_contract():
@@ -356,6 +383,13 @@ def test_redaction_reuses_values_and_replaces_right_to_left():
     assert redact(text, entities)[0] == "[PERSON_1] met [PERSON_1] in [LOCATION_1]."
 
 
+def test_redaction_rejects_stale_or_out_of_range_entities():
+    with pytest.raises(ValueError, match="does not match"):
+        redact("Ada", [Entity(0, 3, "PERSON", "Eve")])
+    with pytest.raises(ValueError, match="invalid entity span"):
+        redact("Ada", [Entity(-1, 3, "PERSON", "Ada")])
+
+
 def test_exact_and_character_metrics():
     example = Example(
         "x", "Ada in Rome", (Entity(0, 3, "PERSON", "Ada"), Entity(7, 11, "LOCATION", "Rome"))
@@ -373,6 +407,13 @@ def test_exact_and_character_metrics():
     assert metrics["characters"]["leaked_gold_characters"] == 1
     assert metrics["characters"]["over_redacted_characters"] == 0
     assert metrics["transcripts"] == {"count": 1, "with_any_leak": 1, "any_leak_rate": 1.0}
+
+
+def test_evaluation_rejects_duplicate_predictions():
+    example = Example("x", "Ada", (Entity(0, 3, "PERSON", "Ada"),))
+    duplicate = Entity(0, 3, "PERSON", "Ada", 0.9)
+    with pytest.raises(ValueError, match="duplicate predicted"):
+        evaluate([example], [[duplicate, duplicate]])
 
 
 def test_evaluation_uses_an_explicit_pii_label_inventory():
@@ -433,6 +474,52 @@ def test_loader_validates_entity_text(tmp_path):
         load_jsonl(path)
 
 
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"id": None, "text": "Ada"},
+        {"id": "x", "text": ["Ada"]},
+        {
+            "id": "x",
+            "text": "Ada",
+            "entities": [{"start": 0.0, "end": 3, "label": "PERSON"}],
+        },
+        {
+            "id": "x",
+            "text": "Ada",
+            "entities": [{"start": False, "end": 3, "label": "PERSON"}],
+        },
+    ],
+)
+def test_loader_rejects_coercible_non_json_schema_types(tmp_path, record):
+    path = tmp_path / "bad-types.jsonl"
+    path.write_text(json.dumps(record) + "\n")
+    with pytest.raises(ValueError, match="invalid example|malformed entity"):
+        load_jsonl(path)
+
+
+def test_pii_splits_must_be_independent(tmp_path):
+    calibration_path = tmp_path / "calibration.jsonl"
+    evaluation_path = tmp_path / "evaluation.jsonl"
+    calibration_path.write_text("")
+    evaluation_path.write_text("")
+    calibration = [Example("cal", "Mira called", ())]
+
+    with pytest.raises(ValueError, match="different files"):
+        _validate_pii_splits(calibration_path, calibration_path, calibration, [])
+    with pytest.raises(ValueError, match="IDs overlap"):
+        _validate_pii_splits(
+            calibration_path, evaluation_path, calibration, [Example("cal", "Other text", ())]
+        )
+    with pytest.raises(ValueError, match="duplicate normalized text"):
+        _validate_pii_splits(
+            calibration_path,
+            evaluation_path,
+            calibration,
+            [Example("eval", "  MIRA   called ", ())],
+        )
+
+
 def test_report_escapes_all_content():
     text = "<script>alert(1)</script> Ada"
     example = Example("<bad>", text, (Entity(26, 29, "PERSON", "Ada"),), "<img src=x>")
@@ -440,6 +527,25 @@ def test_report_escapes_all_content():
     page = render_html(build_results([example], [[prediction]], "<model>", "<rev>"))
     assert "<script>" not in page and "<img src=x>" not in page
     assert "&lt;script&gt;" in page and "&lt;model&gt;" in page
+
+
+def test_provenance_fingerprints_inputs_options_and_surfaces_run_id(tmp_path):
+    input_path = tmp_path / "input.txt"
+    input_path.write_text("fictional input")
+    root = Path(__file__).resolve().parents[1]
+    first = build_provenance(root, [input_path], {"threshold": 0.5})
+    second = build_provenance(root, [input_path], {"threshold": 0.5})
+
+    assert first["run_id"] == second["run_id"]
+    assert first["inputs_sha256"][str(input_path)]
+    assert first["source_sha256"]
+    assert first["dependencies"]["nerdact"] == "0.1.0"
+
+    example = Example("x", "Ada", (Entity(0, 3, "PERSON", "Ada"),))
+    results = build_results([example], [[]], "model", "revision")
+    results["provenance"] = first
+    page = render_html(results)
+    assert first["run_id"] in page and "fingerprints are recorded" in page
 
 
 def test_pii_report_escapes_originals_and_metadata(tmp_path):

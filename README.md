@@ -27,6 +27,13 @@ uv run --extra pii nerdact compare-pii
 uv run pytest
 ```
 
+## Choose a path
+
+- **Learn and reproduce:** [`learning/`](learning/) organizes the token-classification,
+  span, redaction, model-comparison, runtime-label, and practical-PII lessons.
+- **Implement:** [`examples/`](examples/) contains two deliberately small, complete paths:
+  the best measured fixed-label NER checkpoint and the broader GLiNER2-plus-rules PII hybrid.
+
 The first inference command downloads model weights into Hugging Face's cache; model
 files are not committed. `compare` also writes machine-readable results, including
 warm latency, throughput, cached snapshot size, peak inference memory, and environment
@@ -34,6 +41,8 @@ metadata, to `artifacts/benchmark.json`. `just setup`, `just demo`, `just report
 `just check` are equivalent convenience recipes. The checked-in fictional reports are
 published from `/docs` at
 [`curtisalexander.github.io/nerdact`](https://curtisalexander.github.io/nerdact/).
+New artifacts also record a run ID, input and source hashes, effective options, dependency
+versions, the Git commit, and whether the generating worktree contained uncommitted changes.
 
 ## From tokens to stable spans
 
@@ -275,6 +284,8 @@ domain-specific validation.
   Reserved, invalid, fictional, and provider test values are used instead of operational PII.
 
 ```text
+learning/             guided index over concepts, benchmarks, and generated lessons
+examples/             minimal recommended NER and alternative hybrid PII implementations
 src/nerdact/          schema, lazy model adapter, evaluation, redaction, report, CLI
 data/                 validated synthetic JSONL corpus
 tests/                network/model-free unit tests using fake pipeline predictions
