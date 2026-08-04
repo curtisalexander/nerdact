@@ -10,5 +10,6 @@ replacement at the wrong location.
 | [`gliner2_pii_hybrid`](gliner2_pii_hybrid/) | Broader PII detection and typed replacement | [Practical PII report](https://curtisalexander.github.io/nerdact/practical-pii.html) |
 
 Both produce pseudonymized text, not anonymous text. Review their limitations before choosing
-one. Choose a row, open its README, and run its minimal command. The complete learning path is
-indexed in [`learning/`](../learning/).
+one. The published [TL;DR and next steps](https://curtisalexander.github.io/nerdact/conclusion.html)
+compares their strengths and failure examples. Then choose a row, open its README, and run its
+minimal command. The complete learning path is indexed in [`learning/`](../learning/).

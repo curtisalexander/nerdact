@@ -27,6 +27,9 @@ compare-gliner:
 compare-pii:
     uv run --extra pii nerdact compare-pii
 
+summarize:
+    uv run nerdact summarize
+
 test:
     uv run pytest
 

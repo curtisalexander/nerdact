@@ -7,26 +7,29 @@ those existing paths stable makes every published result reproducible.
 
 ## Suggested path
 
-Start with the shared foundation:
+Start with the shared foundation, then choose an outcome:
 
 1. **NER and source spans** — follow sections 1–2 of the
    [published baseline lesson](https://curtisalexander.github.io/nerdact/#ner), then inspect
-   `model.py`, `schema.py`, and `redact.py` in [`src/nerdact`](../src/nerdact/).
+   `model.py`, `schema.py`, and `redact.py` in [`src/nerdact`](../src/nerdact/). Every result
+   on that page comes from `dslim/bert-base-NER` (BERT-base, not DistilBERT).
 2. **Exact evaluation and redaction risk** — continue through
    [evaluation, results, and redaction](https://curtisalexander.github.io/nerdact/#evaluation).
-3. **Classic model comparison** — compare DistilBERT, BERT-base, BERT-large, and RoBERTa-large
-   in the [classic checkpoint report](https://curtisalexander.github.io/nerdact/benchmark.html). This evaluation motivates the
-   minimal [RoBERTa example](../examples/roberta_ner/).
+3. **Read the conclusion** — use the
+   [TL;DR and next steps](https://curtisalexander.github.io/nerdact/conclusion.html) to choose
+   fixed-label RoBERTa NER or the broader GLiNER2 hybrid PII system.
 
-Then choose what matters to you:
+Use the remaining reports as evidence or optional deep dives:
 
-- **Implement fixed-label NER:** stop at the [RoBERTa example](../examples/roberta_ner/).
+- **Compare fixed-label NER:** the [checkpoint report](https://curtisalexander.github.io/nerdact/benchmark.html)
+  explains why the learning path ends at the [RoBERTa example](../examples/roberta_ner/).
 - **Study long inputs:** review the [modern encoder lesson](https://curtisalexander.github.io/nerdact/modern-encoders.html),
   including why a newer architecture did not automatically produce a better NER checkpoint.
-- **Explore broader PII:** read the [runtime-label lesson](https://curtisalexander.github.io/nerdact/runtime-labels.html) as an
-  optional bridge, then review the separate taxonomy, calibration split, deterministic rules,
-   model limitations, and conflict resolution in the [practical PII lesson](https://curtisalexander.github.io/nerdact/practical-pii.html). This evaluation motivates the alternative
-   [hybrid PII example](../examples/gliner2_pii_hybrid/).
+- **Understand GLiNER:** read the [runtime-label lesson](https://curtisalexander.github.io/nerdact/runtime-labels.html)
+  only if you want to understand label-conditioned inference.
+- **Evaluate broader PII:** the [practical PII lesson](https://curtisalexander.github.io/nerdact/practical-pii.html)
+  explains why combining GLiNER2 with structural rules is a hybrid and motivates the
+  [hybrid PII example](../examples/gliner2_pii_hybrid/).
 
 ## Reproduce the lessons
 
@@ -37,6 +40,7 @@ uv run --extra benchmark nerdact compare --limit 200
 uv run --extra benchmark nerdact compare-modern --limit 200
 uv run --extra gliner nerdact compare-gliner
 uv run --extra pii nerdact compare-pii
+uv run nerdact summarize
 just integration-test  # real cached BERT pipeline across 512-token windows
 ```
 

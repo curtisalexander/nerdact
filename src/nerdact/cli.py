@@ -34,6 +34,7 @@ from .redact import redact
 from .report import (
     build_results,
     write_comparison,
+    write_learning_summary,
     write_pii_comparison,
     write_results,
     write_runtime_comparison,
@@ -772,6 +773,14 @@ def main() -> None:
     )
     pii.add_argument("--output", type=Path, default=Path("artifacts/pii-benchmark.json"))
     pii.add_argument("--html", type=Path, default=Path("docs/practical-pii.html"))
+    summary = sub.add_parser(
+        "summarize", help="write the conclusions page from checked-in benchmark artifacts"
+    )
+    summary.add_argument(
+        "--benchmark", type=Path, default=Path("artifacts/benchmark.json")
+    )
+    summary.add_argument("--pii", type=Path, default=Path("artifacts/pii-benchmark.json"))
+    summary.add_argument("--html", type=Path, default=Path("docs/conclusion.html"))
     args = parser.parse_args()
     scalar_thresholds = [
         value
@@ -800,6 +809,13 @@ def main() -> None:
         if (args.model, args.revision) != (pii_checkpoint["model"], pii_checkpoint["revision"]):
             parser.error("compare-pii checkpoint must match the benchmark manifest")
         _compare_pii(args, pii_checkpoint, manifest["schema_version"])
+    elif args.command == "summarize":
+        write_learning_summary(
+            json.loads(args.benchmark.read_text(encoding="utf-8")),
+            json.loads(args.pii.read_text(encoding="utf-8")),
+            args.html,
+        )
+        print(f"Wrote {args.html}")
     elif args.command in ("demo", "report"):
         _run_corpus(args, args.command == "report")
     elif args.command == "redact":

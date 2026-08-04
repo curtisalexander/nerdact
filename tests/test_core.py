@@ -32,7 +32,13 @@ from nerdact.pii_model import (
 )
 from nerdact.provenance import build_provenance
 from nerdact.redact import redact
-from nerdact.report import build_results, render_html, write_comparison, write_pii_comparison
+from nerdact.report import (
+    build_results,
+    render_html,
+    write_comparison,
+    write_learning_summary,
+    write_pii_comparison,
+)
 from nerdact.schema import PII_LABELS, Entity, Example, load_jsonl
 
 
@@ -563,6 +569,7 @@ def test_report_escapes_all_content():
         for section in ("ner", "spans", "evaluation", "results", "redaction", "limits", "reproduce")
     )
     assert 'class="case"' in page and "Recreate this report" in page
+    assert "Results on this entire page" in page
 
 
 def test_report_supports_scoreless_predictions_and_escapes_reproduction_command():
@@ -618,6 +625,22 @@ def test_pii_report_escapes_originals_and_metadata(tmp_path):
     page = output.read_text()
     assert "<script>" not in page and "<img src=x>" not in page
     assert "&lt;script&gt;" in page and "&lt;model&gt;" in page
+    assert "What makes this system “hybrid”?" in page
+
+
+def test_learning_summary_connects_results_to_examples(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    benchmark = json.loads((root / "artifacts/benchmark.json").read_text())
+    pii = json.loads((root / "artifacts/pii-benchmark.json").read_text())
+    output = tmp_path / "conclusion.html"
+
+    write_learning_summary(benchmark, pii, output)
+
+    page = output.read_text()
+    assert "RoBERTa NER: strong, narrow, and still fallible" in page
+    assert "The GLiNER2 model is only one half" in page
+    assert "examples/roberta_ner" in page and "examples/gliner2_pii_hybrid" in page
+    assert "Do not compare the two headline F1 scores as a race" in page
 
 
 def test_comparison_supports_multiple_linked_model_profiles(tmp_path):
@@ -687,7 +710,7 @@ def test_comparison_supports_multiple_linked_model_profiles(tmp_path):
     assert 'href="small.html"' in page and 'href="large.html"' in page
     assert "Small &lt;model&gt;" in page and "66M" in page
     assert "12.3 ms" in page and "1 MiB" in page and "Test CPU" in page
-    assert "same 1 domain transcript" in page
+    assert "same 1 fictional transcript" in page
     assert "Quality versus cost conclusion" in page
 
 
