@@ -695,6 +695,7 @@ def test_landing_page_offers_learning_answer_and_code_paths(tmp_path):
     assert 'href="conclusion.html"' in page
     assert "Open examples" in page
     assert 'aria-current="page">Home</a>' in page
+    assert "position:fixed" in page and "flex-wrap:nowrap" in page
 
 
 def test_comparison_supports_multiple_linked_model_profiles(tmp_path):
