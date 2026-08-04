@@ -1,12 +1,36 @@
 import json
+from pathlib import Path
 
 import pytest
 
+from nerdact.cli import (
+    _long_context_examples,
+    _model_profiles,
+    _select_recall_threshold,
+    load_benchmark_manifest,
+)
+from nerdact.detectors import detect_structured_pii
 from nerdact.evaluate import evaluate
-from nerdact.model import _aggregation_strategy, predictions_to_entities
+from nerdact.gliner_model import (
+    GLiNERAdapter,
+    gliner_predictions_to_entities,
+    load_runtime_schema,
+)
+from nerdact.hybrid import resolve_pii_overlaps
+from nerdact.model import (
+    HuggingFaceNER,
+    _aggregation_strategy,
+    _validate_labels,
+    predictions_to_entities,
+)
+from nerdact.pii_model import (
+    GLiNER2PIIAdapter,
+    gliner2_predictions_to_entities,
+    load_pii_schema,
+)
 from nerdact.redact import redact
-from nerdact.report import build_results, render_html, write_comparison
-from nerdact.schema import Entity, Example, load_jsonl
+from nerdact.report import build_results, render_html, write_comparison, write_pii_comparison
+from nerdact.schema import PII_LABELS, Entity, Example, load_jsonl
 
 
 def test_fake_pipeline_conversion_threshold_and_labels():
@@ -22,9 +46,304 @@ def test_fake_pipeline_conversion_threshold_and_labels():
     ]
 
 
+def test_prediction_offsets_exclude_tokenizer_separator_whitespace():
+    text = "Ada met Mira Sol today"
+    fake = [{"entity_group": "PER", "start": 7, "end": 16, "score": 0.9}]
+    assert predictions_to_entities(text, fake) == [Entity(8, 16, "PERSON", "Mira Sol", 0.9)]
+
+
 def test_aggregation_matches_the_models_label_contract():
     assert _aggregation_strategy(["O", "B-PER", "I-PER"]) == "first"
     assert _aggregation_strategy(["O", "PER", "ORG"]) == "simple"
+
+
+def test_checkpoint_labels_must_match_all_four_labels_exactly():
+    _validate_labels(
+        ["O", "B-PER", "I-PER", "B-ORG", "I-ORG", "B-LOC", "I-LOC", "B-MISC", "I-MISC"]
+    )
+    with pytest.raises(ValueError, match="map exactly"):
+        _validate_labels(["O", "B-PER", "I-PER", "B-DATE", "I-DATE"])
+    with pytest.raises(ValueError, match="map exactly"):
+        _validate_labels(["O", "PER", "ORG", "LOC"])
+
+
+def test_adapter_uses_overlap_to_recover_a_512_token_boundary_span():
+    example = _long_context_examples()[0]
+    entity = example.entities[0]
+    assert len(example.text[: entity.start].split()) == 509
+
+    class BoundaryPipeline:
+        def __call__(self, text, *, stride):
+            assert text == example.text
+            assert stride == 64
+            return [
+                {
+                    "entity_group": "PER",
+                    "start": entity.start,
+                    "end": entity.end,
+                    "score": 0.99,
+                }
+            ]
+
+    adapter = HuggingFaceNER()
+    adapter._pipeline = BoundaryPipeline()
+    assert adapter.predict(example.text) == [
+        Entity(entity.start, entity.end, "PERSON", "Mira Sol", 0.99)
+    ]
+
+
+def test_checked_in_runtime_schema_has_described_typed_mappings():
+    schema = load_runtime_schema("data/runtime-labels.json")
+    assert schema.prompts("concise") == [
+        "person",
+        "organization",
+        "location",
+        "miscellaneous named entity",
+    ]
+    assert schema.prompt_map("descriptive")["named individual person"] == "PERSON"
+    assert [label.placeholder for label in schema.labels] == [label.type for label in schema.labels]
+
+
+def test_benchmark_manifest_is_the_profile_and_dataset_source_of_truth():
+    manifest = load_benchmark_manifest()
+    classic = _model_profiles(manifest, "classic")
+    modern = _model_profiles(manifest, "modern")
+
+    assert manifest["datasets"]["conll2003"] == {
+        "id": "BramVanroy/conll2003",
+        "revision": "4ffbd53d9e0b92b473b9b7dcff12f53e7c17ce0c",
+        "allowed_splits": ["validation", "test"],
+    }
+    assert [profile.model for profile in classic] == [
+        "dslim/distilbert-NER",
+        "dslim/bert-base-NER",
+        "dslim/bert-large-NER",
+        "Jean-Baptiste/roberta-large-ner-english",
+    ]
+    assert [profile.report for profile in classic] == [
+        "distilbert.html",
+        "index.html",
+        "bert-large.html",
+        "roberta-large.html",
+    ]
+    assert modern[0].decoder.endswith("64-token overlap")
+    assert modern[1].context_length == 8192
+
+
+def test_benchmark_manifest_rejects_adapter_revision_drift(tmp_path):
+    manifest = json.loads(Path("data/benchmark-manifest.json").read_text())
+    manifest["checkpoints"]["bert-base"]["revision"] = "mutable-main"
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(manifest))
+
+    with pytest.raises(ValueError, match="does not match its adapter default"):
+        load_benchmark_manifest(path)
+
+
+def test_gliner_adapter_uses_native_span_decoder_contract():
+    schema = load_runtime_schema("data/runtime-labels.json")
+
+    class FakeGLiNER:
+        def predict_entities(self, text, labels, *, threshold, flat_ner, multi_label):
+            assert text == "Mira joined Northstar"
+            assert labels == schema.prompts("descriptive")
+            assert threshold == 0.4
+            assert flat_ner is False
+            assert multi_label is True
+            return [
+                {"start": 0, "end": 4, "text": "Mira", "label": labels[0], "score": 0.91},
+                {
+                    "start": 12,
+                    "end": 21,
+                    "text": "Northstar",
+                    "label": labels[1],
+                    "score": 0.82,
+                },
+            ]
+
+    adapter = GLiNERAdapter(
+        schema, threshold=0.4, wording="descriptive", flat_ner=False, multi_label=True
+    )
+    adapter._model = FakeGLiNER()
+    assert adapter.predict("Mira joined Northstar") == [
+        Entity(0, 4, "PERSON", "Mira", 0.91),
+        Entity(12, 21, "ORGANIZATION", "Northstar", 0.82),
+    ]
+
+
+def test_gliner_conversion_preserves_competing_and_overlapping_spans():
+    text = "Northstar Relay"
+    predictions = [
+        {"start": 0, "end": 15, "label": "organization", "score": 0.8},
+        {"start": 0, "end": 9, "label": "location", "score": 0.7},
+        {"start": 0, "end": 15, "label": "unknown", "score": 0.9},
+    ]
+    assert gliner_predictions_to_entities(
+        text, predictions, {"organization": "ORGANIZATION", "location": "LOCATION"}
+    ) == [
+        Entity(0, 9, "LOCATION", "Northstar", 0.7),
+        Entity(0, 15, "ORGANIZATION", "Northstar Relay", 0.8),
+    ]
+
+
+def test_checked_in_pii_schema_maps_only_documented_model_labels():
+    schema = load_pii_schema("data/pii-labels.json")
+    assert set(schema.model_label_map().values()) == set(PII_LABELS) - {"DEVICE_ID", "URL"}
+    assert schema.model_label_map()["email"] == "EMAIL_ADDRESS"
+    assert schema.model_label_map()["card_number"] == "FINANCIAL_ID"
+    assert schema.requested_labels().count("phone_number") == 1
+
+
+def test_gliner2_pii_adapter_uses_long_span_extraction_contract():
+    schema = load_pii_schema("data/pii-labels.json")
+
+    class FakeSchemaBuilder:
+        def entities(self, labels):
+            assert labels == schema.requested_labels()
+            return "built-schema"
+
+    class FakeGLiNER2:
+        def create_schema(self):
+            return FakeSchemaBuilder()
+
+        def extract_long(self, text, extraction_schema, **options):
+            assert text == "Email mira@example.test from 192.0.2.1"
+            assert extraction_schema == "built-schema"
+            assert options == {
+                "threshold": 0.4,
+                "chunk_size": 384,
+                "chunk_overlap": 64,
+                "include_confidence": True,
+                "include_spans": True,
+                "overlap_policy": None,
+            }
+            return {
+                "entities": {
+                    "email": [
+                        {
+                            "text": "mira@example.test",
+                            "confidence": 0.91,
+                            "start": 6,
+                            "end": 23,
+                        }
+                    ],
+                    "ip_address": [
+                        {"text": "192.0.2.1", "confidence": 0.82, "start": 29, "end": 38}
+                    ],
+                }
+            }
+
+    adapter = GLiNER2PIIAdapter(schema, threshold=0.4)
+    adapter._model = FakeGLiNER2()
+    assert adapter.predict("Email mira@example.test from 192.0.2.1") == [
+        Entity(
+            6,
+            23,
+            "EMAIL_ADDRESS",
+            "mira@example.test",
+            0.91,
+            ("model:fastino/gliner2-privacy-filter-PII-multi",),
+        ),
+        Entity(
+            29,
+            38,
+            "IP_ADDRESS",
+            "192.0.2.1",
+            0.82,
+            ("model:fastino/gliner2-privacy-filter-PII-multi",),
+        ),
+    ]
+
+
+def test_gliner2_pii_conversion_deduplicates_broad_and_specific_labels():
+    text = "Card 4111 1111 1111 1111"
+    result = {
+        "entities": {
+            "payment_card": [{"text": text[5:], "confidence": 0.8, "start": 5, "end": len(text)}],
+            "card_number": [{"text": text[5:], "confidence": 0.9, "start": 5, "end": len(text)}],
+            "unsupported": [{"text": "Card", "confidence": 1.0, "start": 0, "end": 4}],
+        }
+    }
+    label_map = {"payment_card": "FINANCIAL_ID", "card_number": "FINANCIAL_ID"}
+    assert gliner2_predictions_to_entities(text, result, label_map) == [
+        Entity(5, len(text), "FINANCIAL_ID", text[5:], 0.9)
+    ]
+
+
+def test_structured_detectors_preserve_rule_provenance_and_exact_spans():
+    text = (
+        "Email mira@example.test, call +1 (202) 555-0147, then open "
+        "https://example.test/reset/demo. Login came from 192.0.2.44."
+    )
+    entities = detect_structured_pii(text)
+    assert [(entity.label, entity.text, entity.provenance) for entity in entities] == [
+        ("EMAIL_ADDRESS", "mira@example.test", ("detector:email",)),
+        ("PHONE_NUMBER", "+1 (202) 555-0147", ("detector:phone",)),
+        ("URL", "https://example.test/reset/demo", ("detector:url",)),
+        ("IP_ADDRESS", "192.0.2.44", ("detector:ip-address",)),
+    ]
+
+
+def test_checked_in_pii_rules_cover_supported_structures_without_negative_hits():
+    examples = load_jsonl("data/pii-calibration.jsonl", PII_LABELS) + load_jsonl(
+        "data/pii-evaluation.jsonl", PII_LABELS
+    )
+    predictions = {example.id: detect_structured_pii(example.text) for example in examples}
+    for example in examples:
+        assert all(entity.provenance for entity in predictions[example.id])
+        if not example.entities:
+            assert predictions[example.id] == []
+
+    detected = {
+        (example.id, entity.start, entity.end, entity.label)
+        for example in examples
+        for entity in predictions[example.id]
+    }
+    gold = {
+        (example.id, entity.start, entity.end, entity.label)
+        for example in examples
+        for entity in example.entities
+    }
+    assert detected <= gold
+    assert {label for _, _, _, label in detected} == {
+        "CREDENTIAL",
+        "DEVICE_ID",
+        "EMAIL_ADDRESS",
+        "FINANCIAL_ID",
+        "GOVERNMENT_ID",
+        "IP_ADDRESS",
+        "PHONE_NUMBER",
+        "URL",
+    }
+
+
+def test_hybrid_resolution_merges_sources_and_prefers_rules_over_model_conflicts():
+    text = "Open https://192.0.2.44/reset"
+    findings = [
+        Entity(5, 31, "URL", text[5:31], 0.96, ("model:pii",)),
+        Entity(5, 31, "URL", text[5:31], 1.0, ("detector:url",)),
+        Entity(13, 23, "IP_ADDRESS", "192.0.2.44", 1.0, ("detector:ip-address",)),
+        Entity(5, 23, "ADDRESS", text[5:23], 0.99, ("model:pii",)),
+    ]
+    result = resolve_pii_overlaps(findings)
+    assert result.entities == (
+        Entity(5, 31, "URL", text[5:31], 1.0, ("detector:url", "model:pii")),
+    )
+    assert {entity.label for entity in result.rejected} == {"ADDRESS", "IP_ADDRESS"}
+
+
+def test_hybrid_resolution_uses_confidence_for_model_only_conflicts_and_keeps_adjacency():
+    findings = [
+        Entity(0, 4, "PERSON", "Mira", 0.8, ("model:pii",)),
+        Entity(0, 9, "USERNAME", "Mira Vale", 0.7, ("model:pii",)),
+        Entity(4, 9, "PERSON", " Vale", 0.6, ("model:pii",)),
+    ]
+    result = resolve_pii_overlaps(findings)
+    assert result.entities == (
+        Entity(0, 4, "PERSON", "Mira", 0.8, ("model:pii",)),
+        Entity(4, 9, "PERSON", " Vale", 0.6, ("model:pii",)),
+    )
+    assert result.rejected == (Entity(0, 9, "USERNAME", "Mira Vale", 0.7, ("model:pii",)),)
 
 
 def test_redaction_reuses_values_and_replaces_right_to_left():
@@ -53,6 +372,49 @@ def test_exact_and_character_metrics():
     }
     assert metrics["characters"]["leaked_gold_characters"] == 1
     assert metrics["characters"]["over_redacted_characters"] == 0
+    assert metrics["transcripts"] == {"count": 1, "with_any_leak": 1, "any_leak_rate": 1.0}
+
+
+def test_evaluation_uses_an_explicit_pii_label_inventory():
+    example = Example(
+        "pii",
+        "mira@example.test",
+        (Entity(0, 17, "EMAIL_ADDRESS", "mira@example.test"),),
+    )
+    metrics = evaluate([example], [[]], PII_LABELS)
+    assert metrics["micro"]["fn"] == 1
+    assert metrics["per_label"]["EMAIL_ADDRESS"]["fn"] == 1
+    assert set(metrics["per_label"]) == set(PII_LABELS)
+
+    with pytest.raises(ValueError, match="outside the evaluation inventory"):
+        evaluate([example], [[]])
+
+
+def test_recall_threshold_selection_uses_only_declared_safety_tiebreakers():
+    def run(threshold, recall, leakage, any_leak, over_redaction):
+        return {
+            "threshold": threshold,
+            "systems": {
+                "hybrid": {
+                    "metrics": {
+                        "micro": {"recall": recall},
+                        "characters": {
+                            "leakage_rate": leakage,
+                            "over_redaction_rate": over_redaction,
+                        },
+                        "transcripts": {"any_leak_rate": any_leak},
+                    }
+                }
+            },
+        }
+
+    runs = [
+        run(0.1, 1.0, 0.02, 0.25, 0.08),
+        run(0.2, 1.0, 0.01, 0.25, 0.09),
+        run(0.3, 1.0, 0.01, 0.25, 0.04),
+        run(0.4, 0.9, 0.0, 0.0, 0.0),
+    ]
+    assert _select_recall_threshold(runs) == 0.3
 
 
 def test_loader_validates_entity_text(tmp_path):
@@ -76,6 +438,31 @@ def test_report_escapes_all_content():
     example = Example("<bad>", text, (Entity(26, 29, "PERSON", "Ada"),), "<img src=x>")
     prediction = Entity(26, 29, "PERSON", "Ada", 0.9)
     page = render_html(build_results([example], [[prediction]], "<model>", "<rev>"))
+    assert "<script>" not in page and "<img src=x>" not in page
+    assert "&lt;script&gt;" in page and "&lt;model&gt;" in page
+
+
+def test_pii_report_escapes_originals_and_metadata(tmp_path):
+    text = "<script>alert(1)</script> Ada"
+    example = Example("<bad>", text, (Entity(26, 29, "PERSON", "Ada"),), "<img src=x>")
+    result = build_results([example], [[]], "model", "revision", PII_LABELS)
+    systems = {
+        "model": result,
+        "rules": result,
+        "hybrid": result,
+        "rejected_conflicts": [{"id": "<bad>", "entities": []}],
+    }
+    artifact = {
+        "model": "<model>",
+        "revision": "<revision>",
+        "selection_policy": "test",
+        "operating_threshold": 0.5,
+        "calibration_runs": [{"threshold": 0.5, "systems": systems}],
+        "evaluation": systems,
+    }
+    output = tmp_path / "pii.html"
+    write_pii_comparison(artifact, output)
+    page = output.read_text()
     assert "<script>" not in page and "<img src=x>" not in page
     assert "&lt;script&gt;" in page and "&lt;model&gt;" in page
 
@@ -159,3 +546,18 @@ def test_checked_in_data_is_valid():
     assert any(
         entity.end == len(example.text) for example in examples for entity in example.entities
     )
+
+
+def test_checked_in_pii_corpus_is_valid_split_and_covers_every_label():
+    calibration = load_jsonl("data/pii-calibration.jsonl", PII_LABELS)
+    evaluation = load_jsonl("data/pii-evaluation.jsonl", PII_LABELS)
+
+    assert len(calibration) == 8
+    assert len(evaluation) == 16
+    assert {example.id for example in calibration}.isdisjoint(example.id for example in evaluation)
+    assert any(not example.entities for example in calibration)
+    assert any(not example.entities for example in evaluation)
+    for examples in (calibration, evaluation):
+        assert {entity.label for example in examples for entity in example.entities} == set(
+            PII_LABELS
+        )

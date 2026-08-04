@@ -1,0 +1,29 @@
+{
+  "schema": "nerdact-four-label-v1",
+  "labels": [
+    {
+      "type": "PERSON",
+      "placeholder": "PERSON",
+      "concise": "person",
+      "descriptive": "named individual person"
+    },
+    {
+      "type": "ORGANIZATION",
+      "placeholder": "ORGANIZATION",
+      "concise": "organization",
+      "descriptive": "named company, agency, or institution"
+    },
+    {
+      "type": "LOCATION",
+      "placeholder": "LOCATION",
+      "concise": "location",
+      "descriptive": "named city, country, region, or geographic place"
+    },
+    {
+      "type": "MISCELLANEOUS",
+      "placeholder": "MISCELLANEOUS",
+      "concise": "miscellaneous named entity",
+      "descriptive": "named event, product, work, language, or nationality"
+    }
+  ]
+}

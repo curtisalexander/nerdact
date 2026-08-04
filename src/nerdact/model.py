@@ -19,11 +19,32 @@ LABEL_MAP = {
     "MISC": "MISCELLANEOUS",
     "MISCELLANEOUS": "MISCELLANEOUS",
 }
+EXPECTED_LABELS = frozenset(LABEL_MAP.values())
 
 
 def _aggregation_strategy(labels: Iterable[str]) -> str:
     """Choose aggregation that matches BIO or prefix-free model labels."""
     return "first" if any(label.startswith(("B-", "I-")) for label in labels) else "simple"
+
+
+def _validate_labels(labels: Iterable[str]) -> None:
+    """Reject heads that do not implement exactly NERdact's fixed taxonomy."""
+    raw = set(labels)
+    normalized = {
+        LABEL_MAP[label.removeprefix("B-").removeprefix("I-")]
+        for label in raw
+        if label != "O" and label.removeprefix("B-").removeprefix("I-") in LABEL_MAP
+    }
+    unsupported = {
+        label
+        for label in raw
+        if label != "O" and label.removeprefix("B-").removeprefix("I-") not in LABEL_MAP
+    }
+    if "O" not in raw or unsupported or normalized != EXPECTED_LABELS:
+        raise ValueError(
+            "checkpoint labels must map exactly to O plus PERSON, ORGANIZATION, LOCATION, "
+            f"and MISCELLANEOUS; received {sorted(raw)}"
+        )
 
 
 def predictions_to_entities(
@@ -36,6 +57,12 @@ def predictions_to_entities(
         if score < threshold:
             continue
         start, end = int(item["start"]), int(item["end"])
+        # Byte-level tokenizers may include separator whitespace in an aggregate's
+        # offset even though whitespace is outside the BIO-labeled word.
+        while start < end and text[start].isspace():
+            start += 1
+        while start < end and text[end - 1].isspace():
+            end -= 1
         raw_label = (
             str(item.get("entity_group", item.get("entity", "")))
             .removeprefix("B-")
@@ -54,10 +81,14 @@ class HuggingFaceNER:
         model: str = DEFAULT_MODEL,
         revision: str | None = DEFAULT_REVISION,
         threshold: float = 0.5,
+        stride: int = 64,
     ) -> None:
+        if stride < 0:
+            raise ValueError("stride must be non-negative")
         self.model_name = model
         self.revision = revision
         self.threshold = threshold
+        self.stride = stride
         self._pipeline: Any = None
 
     def _load(self) -> Any:
@@ -66,6 +97,7 @@ class HuggingFaceNER:
 
             config = AutoConfig.from_pretrained(self.model_name, revision=self.revision)
             labels = [str(label) for label in config.id2label.values()]
+            _validate_labels(labels)
             self._pipeline = pipeline(
                 "token-classification",
                 model=self.model_name,
@@ -78,4 +110,6 @@ class HuggingFaceNER:
         return self._pipeline
 
     def predict(self, text: str) -> list[Entity]:
-        return predictions_to_entities(text, self._load()(text), self.threshold)
+        # TokenClassificationPipeline uses overlapping windows when text exceeds the
+        # tokenizer's model_max_length, then resolves duplicate overlap predictions.
+        return predictions_to_entities(text, self._load()(text, stride=self.stride), self.threshold)

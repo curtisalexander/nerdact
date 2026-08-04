@@ -1,0 +1,34 @@
+{
+  "schema": "nerdact-pii-v1",
+  "model": "fastino/gliner2-privacy-filter-PII-multi",
+  "labels": [
+    {"type": "PERSON", "placeholder": "PERSON", "model_labels": ["person"]},
+    {"type": "ADDRESS", "placeholder": "ADDRESS", "model_labels": ["address"]},
+    {"type": "PHONE_NUMBER", "placeholder": "PHONE_NUMBER", "model_labels": ["phone_number"]},
+    {"type": "EMAIL_ADDRESS", "placeholder": "EMAIL_ADDRESS", "model_labels": ["email"]},
+    {
+      "type": "GOVERNMENT_ID",
+      "placeholder": "GOVERNMENT_ID",
+      "model_labels": ["government_id", "national_id_number", "passport_number", "drivers_license_number", "license_number", "tax_id", "tax_number"]
+    },
+    {
+      "type": "FINANCIAL_ID",
+      "placeholder": "FINANCIAL_ID",
+      "model_labels": ["bank_account", "account_number", "routing_number", "iban", "payment_card", "card_number", "card_cvv"]
+    },
+    {
+      "type": "CREDENTIAL",
+      "placeholder": "CREDENTIAL",
+      "model_labels": ["password", "secret", "api_key", "access_token", "recovery_code"]
+    },
+    {
+      "type": "DATE",
+      "placeholder": "DATE",
+      "model_labels": ["date_of_birth", "sensitive_date", "document_date", "expiration_date", "transaction_date", "card_expiry"]
+    },
+    {"type": "USERNAME", "placeholder": "USERNAME", "model_labels": ["username"]},
+    {"type": "IP_ADDRESS", "placeholder": "IP_ADDRESS", "model_labels": ["ip_address"]},
+    {"type": "DEVICE_ID", "placeholder": "DEVICE_ID", "model_labels": []},
+    {"type": "URL", "placeholder": "URL", "model_labels": []}
+  ]
+}

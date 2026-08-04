@@ -18,6 +18,15 @@ benchmark limit="200":
 compare limit="200":
     uv run --extra benchmark nerdact compare --limit {{limit}}
 
+compare-modern limit="200":
+    uv run --extra benchmark nerdact compare-modern --limit {{limit}}
+
+compare-gliner:
+    uv run --extra gliner nerdact compare-gliner
+
+compare-pii:
+    uv run --extra pii nerdact compare-pii
+
 test:
     uv run pytest
 

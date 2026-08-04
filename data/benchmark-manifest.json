@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "datasets": {
+    "conll2003": {
+      "id": "BramVanroy/conll2003",
+      "revision": "4ffbd53d9e0b92b473b9b7dcff12f53e7c17ce0c",
+      "allowed_splits": ["validation", "test"]
+    }
+  },
+  "checkpoints": {
+    "distilbert": {
+      "model": "dslim/distilbert-NER",
+      "revision": "dfa2838a127384aabb82ed7719e16dab84c42a2a",
+      "license": "Apache-2.0",
+      "parameters": "66M",
+      "introduced": "2019",
+      "training_data": "CoNLL-2003 English train split",
+      "label_schema": ["PERSON", "ORGANIZATION", "LOCATION", "MISCELLANEOUS"],
+      "context_length": 512,
+      "context_unit": "tokens",
+      "decoder": "BIO token classification; first-subword aggregation"
+    },
+    "bert-base": {
+      "model": "dslim/bert-base-NER",
+      "revision": "d1a3e8f13f8c3566299d95fcfc9a8d2382a9affc",
+      "license": "MIT",
+      "parameters": "110M",
+      "introduced": "2018",
+      "training_data": "CoNLL-2003 English train split",
+      "label_schema": ["PERSON", "ORGANIZATION", "LOCATION", "MISCELLANEOUS"],
+      "context_length": 512,
+      "context_unit": "tokens",
+      "decoder": "BIO token classification; first-subword aggregation"
+    },
+    "bert-large": {
+      "model": "dslim/bert-large-NER",
+      "revision": "6fe43d9ec0bba0f67e367ecd74399216fc409c7f",
+      "license": "MIT",
+      "parameters": "340M",
+      "introduced": "2018",
+      "training_data": "CoNLL-2003 English train split",
+      "label_schema": ["PERSON", "ORGANIZATION", "LOCATION", "MISCELLANEOUS"],
+      "context_length": 512,
+      "context_unit": "tokens",
+      "decoder": "BIO token classification; first-subword aggregation"
+    },
+    "roberta-large": {
+      "model": "Jean-Baptiste/roberta-large-ner-english",
+      "revision": "8f3abc1ef81ffbbb0e80568d4fed1dd10d459548",
+      "license": "MIT",
+      "parameters": "355M",
+      "introduced": "2019",
+      "training_data": "CoNLL-2003 English train and test splits",
+      "label_schema": ["PERSON", "ORGANIZATION", "LOCATION", "MISCELLANEOUS"],
+      "context_length": 512,
+      "context_unit": "tokens",
+      "decoder": "Prefix-free token classification; simple aggregation"
+    },
+    "modernbert-large": {
+      "model": "RGarrido03/modernbert-conll2003-ner-large",
+      "revision": "62fdc4a112fe832bedda4cee9d467c503bc39355",
+      "license": "Apache-2.0",
+      "parameters": "395M",
+      "introduced": "2024",
+      "training_data": "CoNLL-2003 English train split; dataset revision not reported",
+      "label_schema": ["PERSON", "ORGANIZATION", "LOCATION", "MISCELLANEOUS"],
+      "context_length": 8192,
+      "context_unit": "tokens",
+      "decoder": "BIO token classification; first-subword aggregation"
+    },
+    "gliner-small": {
+      "model": "urchade/gliner_small-v2.1",
+      "revision": "4e091416cf7c3481db542c2a3d26156916f3a47f",
+      "license": "Apache-2.0",
+      "parameters": "166M",
+      "introduced": "2024",
+      "training_data": "urchade/pile-mistral-v0.1; contamination not audited",
+      "label_schema": ["runtime-selected; see data/runtime-labels.json"],
+      "context_length": 384,
+      "context_unit": "words",
+      "maximum_span_width": 12,
+      "decoder": "label-conditioned flat span extraction"
+    },
+    "gliner2-pii": {
+      "model": "fastino/gliner2-privacy-filter-PII-multi",
+      "revision": "59894c087cb2923b01f337d4ee72f6ff84d5bdd6",
+      "license": "Apache-2.0",
+      "parameters": "approximately 0.3B",
+      "introduced": "2026",
+      "training_data": "4,910 unpublished synthetic multilingual texts; 129,951 PII mentions",
+      "label_schema": ["42 trained labels mapped through data/pii-labels.json"],
+      "context_length": 512,
+      "context_unit": "tokens",
+      "decoder": "label-conditioned spans with overlapping long-text extraction"
+    }
+  },
+  "experiments": {
+    "classic": {
+      "dataset": "conll2003",
+      "split": "validation",
+      "profiles": [
+        {"checkpoint": "distilbert", "name": "Efficiency · DistilBERT", "report": "distilbert.html"},
+        {"checkpoint": "bert-base", "name": "Baseline · BERT base", "report": "index.html"},
+        {"checkpoint": "bert-large", "name": "Scale · BERT large", "report": "bert-large.html"},
+        {"checkpoint": "roberta-large", "name": "Quality-heavy · RoBERTa large", "report": "roberta-large.html"}
+      ]
+    },
+    "modern": {
+      "dataset": "conll2003",
+      "split": "validation",
+      "profiles": [
+        {
+          "checkpoint": "bert-base",
+          "name": "512-token baseline · BERT base",
+          "report": "phase2-bert.html",
+          "decoder": "BIO token classification; first-subword aggregation; 64-token overlap"
+        },
+        {"checkpoint": "modernbert-large", "name": "Long-context · ModernBERT large", "report": "modernbert-large.html"}
+      ]
+    },
+    "runtime-labels": {"checkpoint": "gliner-small"},
+    "practical-pii": {"checkpoint": "gliner2-pii"}
+  }
+}

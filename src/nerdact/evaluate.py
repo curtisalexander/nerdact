@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import Any
 
 from .schema import LABELS, Entity, Example
@@ -26,14 +26,28 @@ def _scores(tp: int, fp: int, fn: int) -> dict[str, float | int]:
 
 
 def evaluate(
-    examples: Sequence[Example], predictions: Sequence[Sequence[Entity]]
+    examples: Sequence[Example],
+    predictions: Sequence[Sequence[Entity]],
+    labels: Collection[str] = LABELS,
 ) -> dict[str, Any]:
     if len(examples) != len(predictions):
         raise ValueError("examples and predictions must have equal lengths")
+    label_order = tuple(labels)
+    if not label_order or len(label_order) != len(set(label_order)):
+        raise ValueError("labels must be non-empty and unique")
     counts: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])
     errors: list[dict[str, Any]] = []
     gold_chars = predicted_chars = leaked_chars = extra_chars = total_chars = 0
+    transcripts_with_leaks = 0
     for example, predicted in zip(examples, predictions, strict=True):
+        observed_labels = {entity.label for entity in example.entities} | {
+            entity.label for entity in predicted
+        }
+        unknown_labels = observed_labels - set(label_order)
+        if unknown_labels:
+            raise ValueError(
+                f"entities contain labels outside the evaluation inventory: {unknown_labels}"
+            )
         gold_keys = {entity.key(): entity for entity in example.entities}
         pred_keys = {entity.key(): entity for entity in predicted}
         for key in gold_keys.keys() & pred_keys.keys():
@@ -48,6 +62,7 @@ def evaluate(
         predicted_chars += len(pred_mask)
         leaked_chars += len(gold_mask - pred_mask)
         extra_chars += len(pred_mask - gold_mask)
+        transcripts_with_leaks += bool(gold_mask - pred_mask)
         total_chars += len(example.text)
         errors.append(
             {
@@ -56,10 +71,10 @@ def evaluate(
                 "fn": [entity for key, entity in gold_keys.items() if key not in pred_keys],
             }
         )
-    per_label = {label: _scores(*counts[label]) for label in LABELS}
-    totals = [sum(counts[label][index] for label in LABELS) for index in range(3)]
+    per_label = {label: _scores(*counts[label]) for label in label_order}
+    totals = [sum(counts[label][index] for label in label_order) for index in range(3)]
     macro = {
-        metric: sum(float(per_label[label][metric]) for label in LABELS) / len(LABELS)
+        metric: sum(float(per_label[label][metric]) for label in label_order) / len(label_order)
         for metric in ("precision", "recall", "f1")
     }
     return {
@@ -74,6 +89,11 @@ def evaluate(
             "over_redacted_characters": extra_chars,
             "leakage_rate": _ratio(leaked_chars, gold_chars),
             "over_redaction_rate": _ratio(extra_chars, total_chars - gold_chars),
+        },
+        "transcripts": {
+            "count": len(examples),
+            "with_any_leak": transcripts_with_leaks,
+            "any_leak_rate": _ratio(transcripts_with_leaks, len(examples)),
         },
         "errors": errors,
     }
